@@ -1,0 +1,10 @@
+{
+  "id": "echo-os-hooks",
+  "name": "echo-OS hooks (Claude Code)",
+  "description": "SessionStart, UserPromptSubmit, Stop and SessionEnd hooks in ~/.claude/settings.json that run hooks/echo-hook.sh in every interactive Claude Code session, forwarding each event in the background to the echo-OS daemon on 127.0.0.1:{{PORT}} so it can track sessions and echo long turns. Never blocks a session; does nothing if the daemon is down.",
+  "kind": "hook",
+  "schedule": "on Claude Code session start, prompt, stop and end",
+  "source": "{{APP_DIR}}",
+  "logs": ["{{LOG_FILE}}"],
+  "registeredAt": "{{TODAY}}"
+}

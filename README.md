@@ -36,7 +36,7 @@ Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 python3.13 -m venv venv
 ./venv/bin/pip install -r requirements.txt -e .
 ./echoctl test        # run the test suite
-./echoctl install     # launchd agent + Claude Code hooks + Daemon Deck manifest
+./echoctl install     # launchd agent + Claude Code hooks + Daemon Deck manifests
 ./echoctl say "Alpha. Voice check."   # queued through the running app
 ```
 
@@ -47,7 +47,7 @@ python3.13 -m venv venv
 2. Adds hook entries for `SessionStart`, `UserPromptSubmit`, `Stop` and `SessionEnd` to
    `~/.claude/settings.json`, keeping every other hook. The first install saves a backup next to it
    (`settings.json.echo-os.bak`).
-3. Writes the Daemon Deck registry manifest.
+3. Writes two Daemon Deck registry manifests: the app (`echo-os`) and its hooks (`echo-os-hooks`).
 
 `./echoctl uninstall` reverses all three.
 

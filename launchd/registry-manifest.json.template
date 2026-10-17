@@ -1,7 +1,7 @@
 {
   "id": "echo-os",
   "name": "echo-OS",
-  "description": "Menu bar app and localhost daemon (127.0.0.1:{{PORT}}) that receives Claude Code hook events from every session on this Mac, gives each session a phonetic call sign, and when a long turn finishes writes a one-line headline with a headless Haiku call (optionally grounded by notes-kb) and speaks it aloud.",
+  "description": "Menu bar app and localhost daemon (127.0.0.1:{{PORT}}) that receives Claude Code hook events from every session on this Mac and gives each session a phonetic call sign. When a long turn finishes it writes a one-line headline with headless Haiku calls (optionally grounded by notes-kb), then shows it as a top-right popup and speaks it through a single speech queue (also open to other tools via POST /api/speak).",
   "kind": "launchd-agent",
   "launchdLabel": "{{LABEL}}",
   "schedule": "at login, restarts on crash",

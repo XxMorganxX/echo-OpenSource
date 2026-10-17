@@ -16,6 +16,7 @@ LOG_FILE="$(setting LOG_FILE)"
 PLIST_DST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 REGISTRY_DIR="${HOME}/.config/background-systems/registry"
 MANIFEST_DST="${REGISTRY_DIR}/echo-os.json"
+HOOKS_MANIFEST_DST="${REGISTRY_DIR}/echo-os-hooks.json"
 
 loaded() { launchctl print "${DOMAIN}/${LABEL}" >/dev/null 2>&1; }
 running() { launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null | grep -q 'state = running'; }
@@ -49,8 +50,13 @@ case "${1:-}" in
         plutil -lint "$PLIST_DST" >/dev/null
         if [ -d "$REGISTRY_DIR" ]; then
             render "${APP_DIR}/launchd/registry-manifest.json.template" > "$MANIFEST_DST"
+            render "${APP_DIR}/launchd/registry-manifest-hooks.json.template" > "$HOOKS_MANIFEST_DST"
         fi
-        loaded && launchctl bootout "${DOMAIN}/${LABEL}" || true
+        if loaded; then
+            launchctl bootout "${DOMAIN}/${LABEL}" || true
+            # bootout returns before launchd has finished unloading; bootstrapping too early fails with error 5.
+            for _ in $(seq 1 50); do loaded || break; sleep 0.2; done
+        fi
         launchctl bootstrap "$DOMAIN" "$PLIST_DST"
         "$PYTHON" -m echo_os.hook_install install
         echo "Installed and started ${LABEL}. New Claude Code sessions pick up the hooks."
@@ -58,7 +64,7 @@ case "${1:-}" in
     uninstall)
         "$PYTHON" -m echo_os.hook_install uninstall
         loaded && launchctl bootout "${DOMAIN}/${LABEL}" || true
-        rm -f "$PLIST_DST" "$MANIFEST_DST"
+        rm -f "$PLIST_DST" "$MANIFEST_DST" "$HOOKS_MANIFEST_DST"
         echo "Uninstalled ${LABEL}"
         ;;
     start)
