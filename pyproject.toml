@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echo-os"
+version = "0.1.0"
+description = "Speaks a one-line headline when a long Claude Code turn finishes, with a tiny macOS menu bar app."
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.setuptools.packages.find]
+include = ["echo_os*"]
+
+[tool.setuptools.package-data]
+"echo_os" = ["server/static/*", "agents/*/system_prompt.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]

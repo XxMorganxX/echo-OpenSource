@@ -1,0 +1,6 @@
+# Same PyObjC pins as an existing menu bar app.
+pyobjc-core==12.1
+pyobjc-framework-Cocoa==12.1
+pyobjc-framework-WebKit==12.1
+python-dotenv==1.2.1
+pytest==9.0.2

@@ -1,0 +1,76 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --bg-panel: rgb(22, 27, 34);
+  --bg-panel-alt: rgb(16, 20, 27);
+  --border: rgba(255, 255, 255, 0.26);
+  --text: #f0f6fc;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-strong: #1f6feb;
+  --success: #3fb950;
+  --danger: #f85149;
+  --warning: #d29922;
+}
+
+/* In the menu bar panel the window is transparent and the cards float; in a browser tab, give the page a ground. */
+html, body { background: transparent; }
+body.in-browser { background: var(--bg-panel-alt); }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--text); font-size: 13px; -webkit-font-smoothing: antialiased; }
+button, textarea { font: inherit; }
+.hidden { display: none !important; }
+
+.shell { display: flex; flex-direction: column; gap: 8px; padding: 12px; max-width: 520px; margin: 0 auto; }
+.card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.muted-text { color: var(--muted); font-size: 12px; }
+
+.header { display: flex; align-items: baseline; gap: 10px; }
+.title { margin: 0; font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+.header-actions { margin-left: auto; display: flex; gap: 4px; }
+.icon-button {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid transparent;
+  background: transparent; color: var(--text); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.icon-button:hover { background: rgba(255, 255, 255, 0.08); }
+.icon-button.is-on { border-color: var(--warning); color: var(--warning); }
+.icon-button:focus-visible, .text-button:focus-visible, .primary-button:focus-visible, .replay:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.sessions, .echoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sessions { gap: 4px; }
+.session { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.working { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.dot.idle { background: var(--success); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.working { animation: none; } }
+.sign { font-weight: 600; min-width: 64px; }
+.project { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.echoes { gap: 0; }
+.echo { padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; }
+.echo:first-child { border-top: none; padding-top: 2px; }
+.echo-meta { color: var(--muted); font-size: 11px; grid-column: 1; }
+.echo-meta .sign { min-width: 0; color: var(--text); margin-right: 4px; }
+.echo-text { grid-column: 1; line-height: 1.35; }
+.echo-text.error { color: var(--danger); }
+.kb-badge { margin-left: 6px; color: var(--accent); }
+.replay { grid-column: 2; grid-row: 1 / span 2; align-self: center; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; border-radius: 6px; padding: 4px 6px; }
+.replay:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.empty { color: var(--muted); padding: 2px 0; }
+
+textarea {
+  width: 100%; resize: vertical; background: var(--bg-panel-alt); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 12px; line-height: 1.4;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+.row-end { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.text-button { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 5px 8px; border-radius: 8px; }
+.text-button:hover { color: var(--text); }
+.primary-button { border: none; background: var(--accent-strong); color: #fff; cursor: pointer; padding: 5px 12px; border-radius: 8px; font-weight: 600; }
+.primary-button:disabled { opacity: 0.5; cursor: default; }
+
+.footer { padding: 0 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.footer .warn { color: var(--warning); }

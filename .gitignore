@@ -1,0 +1,14 @@
+# Secrets
+.env
+.env.local
+
+# Runtime state: session call signs, echo history (contains transcript excerpts), temp audio
+state/
+
+# Local env / caches / OS
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.DS_Store

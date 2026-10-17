@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Echo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="card header">
+      <h1 class="title">Echo</h1>
+      <span id="liveCount" class="muted-text">…</span>
+      <div class="header-actions">
+        <button id="muteButton" class="icon-button" type="button" title="Mute speech" aria-label="Mute speech">🔊</button>
+        <button id="promptButton" class="icon-button" type="button" title="Edit headline prompt" aria-label="Edit headline prompt">✎</button>
+        <button id="closeButton" class="icon-button hidden" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+    </header>
+
+    <section id="promptCard" class="card hidden" aria-label="Headline system prompt">
+      <div class="card-head">
+        <span class="label">Headline system prompt</span>
+        <span id="promptStatus" class="muted-text"></span>
+      </div>
+      <textarea id="promptInput" rows="9" spellcheck="false"></textarea>
+      <div class="row-end">
+        <button id="promptCancel" class="text-button" type="button">Cancel</button>
+        <button id="promptSave" class="primary-button" type="button">Save</button>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Active sessions">
+      <div class="card-head"><span class="label">Sessions</span></div>
+      <ul id="sessions" class="sessions"></ul>
+    </section>
+
+    <section class="card" aria-label="Recent echoes">
+      <div class="card-head"><span class="label">Echoes</span></div>
+      <ul id="echoes" class="echoes"></ul>
+    </section>
+
+    <footer id="footer" class="footer muted-text"></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

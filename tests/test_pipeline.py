@@ -1,0 +1,193 @@
+import pytest
+from conftest import T0, assistant_text, human, tool_result, tool_use
+
+from echo_os.agents.headline.agent import Headline
+from echo_os.agents.kb_relevance.agent import KbContext, KbLookup
+from echo_os.agents.shared.headless_model import HeadlessModelError
+from echo_os.echo.history import EchoHistory
+from echo_os.echo.pipeline import EchoJob, EchoPipeline
+from echo_os.echo.preferences import Preferences
+from echo_os.sessions import SessionRegistry
+
+
+class FakeHeadline:
+    def __init__(self, text="Billing refactor done.", error=None):
+        self.text, self.error, self.calls = text, error, []
+
+    def write(self, digest, *, project, kb_context=None):
+        self.calls.append({"digest": digest, "project": project, "kb_context": kb_context})
+        if self.error:
+            raise self.error
+        return Headline(self.text, 0.002, 1500)
+
+
+class FakeKb:
+    def __init__(self, lookup=None):
+        self.result = lookup or KbLookup(None)
+        self.calls = 0
+
+    def lookup(self, digest, *, project):
+        self.calls += 1
+        return self.result
+
+
+class FakeSpeaker:
+    def __init__(self):
+        self.said = []
+
+    def say(self, text):
+        self.said.append(text)
+
+
+def long_turn(write_transcript, name="t.jsonl"):
+    entries = [human("Refactor billing", 0)]
+    for i in range(6):
+        entries += [tool_use("Edit", 10 + i), tool_result(11 + i)]
+    entries.append(assistant_text("All 42 tests pass.", 400))
+    return write_transcript(entries, name)
+
+
+def short_turn(write_transcript):
+    return write_transcript([human("hi", 0), assistant_text("hello", 5)], "short.jsonl")
+
+
+@pytest.fixture
+def make_pipeline(tmp_path):
+    def _make(headline=None, kb=None, kb_enabled=True):
+        parts = dict(
+            registry=SessionRegistry(tmp_path / "sessions.json", call_signs=["Alpha", "Bravo"]),
+            headline_agent=headline or FakeHeadline(),
+            kb_agent=kb if kb is not None else FakeKb(),
+            speaker=FakeSpeaker(),
+            history=EchoHistory(tmp_path / "echoes.jsonl"),
+            preferences=Preferences(tmp_path / "prefs.json"),
+        )
+        pipeline = EchoPipeline(**parts, kb_enabled=kb_enabled, min_turn_seconds=180, min_tool_calls=5,
+                                max_job_age_seconds=600, tracked_entrypoints={"cli"},
+                                spoken_template="{call_sign}. {headline}")
+        return pipeline, parts
+    return _make
+
+
+def hook(event, session_id="s1", **extra):
+    return {"hook_event_name": event, "session_id": session_id, "cwd": "/dev/billing-svc", **extra}
+
+
+def stop_job(path, session_id="s1"):
+    return EchoJob(session_id=session_id, transcript_path=str(path), ended_at=T0.timestamp() + 405, queued_at=T0.timestamp() + 405)
+
+
+def test_untracked_entrypoints_are_ignored(make_pipeline):
+    pipeline, parts = make_pipeline()
+    assert pipeline.handle_hook(hook("SessionStart"), entrypoint="sdk-cli", pid=None, now=1) is None
+    assert parts["registry"].active() == []
+
+
+def test_session_start_assigns_a_call_sign(make_pipeline):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=42, now=1)
+    session = parts["registry"].get("s1")
+    assert (session.call_sign, session.project, session.pid) == ("Alpha", "billing-svc", 42)
+
+
+def test_prompt_marks_working_and_stop_returns_a_job(make_pipeline):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("UserPromptSubmit"), entrypoint="cli", pid=None, now=1)
+    assert parts["registry"].get("s1").status == "working"
+    job = pipeline.handle_hook(hook("Stop", transcript_path="/t.jsonl", last_assistant_message="Hi"),
+                               entrypoint="cli", pid=None, now=9)
+    assert parts["registry"].get("s1").status == "idle"
+    assert job == EchoJob("s1", "/t.jsonl", ended_at=9, queued_at=9, last_assistant_message="Hi")
+
+
+def test_session_end_frees_the_sign(make_pipeline):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=None, now=1)
+    pipeline.handle_hook(hook("SessionEnd"), entrypoint="cli", pid=None, now=2)
+    assert parts["registry"].active() == []
+
+
+def test_hook_with_an_unknown_entrypoint_header_is_tracked(make_pipeline):
+    """An old hook script that doesn't send the entrypoint shouldn't silently disable echoes."""
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="", pid=None, now=1)
+    assert parts["registry"].get("s1") is not None
+
+
+def test_long_turn_is_summarized_spoken_and_recorded(make_pipeline, write_transcript):
+    kb = FakeKb(KbLookup(KbContext("Billing ships Friday.", ["Roadmap"]), cost_usd=0.004, duration_ms=3000))
+    pipeline, parts = make_pipeline(kb=kb)
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=None, now=1)
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["speaker"].said == ["Alpha. Billing refactor done."]
+    assert parts["headline_agent"].calls[0]["kb_context"].context == "Billing ships Friday."
+    assert parts["headline_agent"].calls[0]["project"] == "billing-svc"
+    stored = parts["history"].recent(5)[0]
+    assert stored["id"] == echo.id and stored["headline"] == "Billing refactor done."
+    assert stored["kb"]["context"] == "Billing ships Friday."
+    assert stored["tool_calls"] == 6
+    assert parts["registry"].get("s1").last_headline == "Billing refactor done."
+
+
+def test_short_turn_is_skipped(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=None, now=1)
+    assert pipeline.process(stop_job(short_turn(write_transcript)), now=T0.timestamp() + 410) is None
+    assert parts["speaker"].said == [] and parts["headline_agent"].calls == []
+    assert parts["kb_agent"].calls == 0
+
+
+def test_kb_agent_is_skipped_when_disabled(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(kb_enabled=False)
+    pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["kb_agent"].calls == 0
+    assert parts["speaker"].said
+
+
+def test_kb_failure_still_speaks_and_is_recorded(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(kb=FakeKb(KbLookup(None, error="Needs authentication")))
+    pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["speaker"].said
+    assert parts["history"].recent(1)[0]["kb"]["error"] == "Needs authentication"
+    assert pipeline.kb_status()["error"] == "Needs authentication"
+
+
+def test_headline_failure_is_recorded_and_nothing_is_spoken(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(headline=FakeHeadline(error=HeadlessModelError("timed out")))
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["speaker"].said == []
+    assert echo.error == "timed out"
+    assert parts["history"].recent(1)[0]["error"] == "timed out"
+
+
+def test_stale_jobs_are_dropped(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    job = stop_job(long_turn(write_transcript))
+    assert pipeline.process(job, now=job.queued_at + 601) is None
+    assert parts["headline_agent"].calls == []
+
+
+def test_missing_transcript_is_skipped(make_pipeline, tmp_path):
+    pipeline, parts = make_pipeline()
+    assert pipeline.process(stop_job(tmp_path / "missing.jsonl"), now=T0.timestamp() + 410) is None
+
+
+def test_muted_echoes_are_recorded_but_not_spoken(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    parts["preferences"].set_muted(True)
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert echo.headline and parts["speaker"].said == []
+
+
+def test_session_seen_first_at_stop_still_gets_a_sign(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    echo = pipeline.process(stop_job(long_turn(write_transcript), session_id="late"), now=T0.timestamp() + 410)
+    assert echo.call_sign == "Alpha"
+
+
+def test_replay_speaks_a_stored_echo_again(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert pipeline.replay(echo.id) is True
+    assert parts["speaker"].said == ["Alpha. Billing refactor done."] * 2
+    assert pipeline.replay("nope") is False

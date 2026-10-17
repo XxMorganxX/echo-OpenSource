@@ -1,0 +1,103 @@
+#!/bin/bash
+# echo-OS control script. The app runs as a per-user launchd agent; this wraps it.
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${APP_DIR}/venv/bin/python"
+DOMAIN="gui/$(id -u)"
+
+# Label, notification names and port come from echo_os/settings.py (and .env).
+setting() { "$PYTHON" -c "from echo_os import settings; print(settings.$1)"; }
+LABEL="$(setting LAUNCHD_LABEL)"
+PORT="$(setting SERVER_PORT)"
+URL="http://127.0.0.1:${PORT}"
+LOG_FILE="$(setting LOG_FILE)"
+
+PLIST_DST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+REGISTRY_DIR="${HOME}/.config/background-systems/registry"
+MANIFEST_DST="${REGISTRY_DIR}/echo-os.json"
+
+loaded() { launchctl print "${DOMAIN}/${LABEL}" >/dev/null 2>&1; }
+running() { launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null | grep -q 'state = running'; }
+
+render() {
+    sed -e "s|{{LABEL}}|${LABEL}|g" \
+        -e "s|{{PYTHON}}|${PYTHON}|g" \
+        -e "s|{{APP_DIR}}|${APP_DIR}|g" \
+        -e "s|{{HOME}}|${HOME}|g" \
+        -e "s|{{PORT}}|${PORT}|g" \
+        -e "s|{{LOG_FILE}}|${LOG_FILE}|g" \
+        -e "s|{{TODAY}}|$(date +%F)|g" "$1"
+}
+
+post_notification() {
+    "$PYTHON" - "$1" <<'PY'
+import sys
+from Foundation import NSDistributedNotificationCenter
+from echo_os import settings
+name = getattr(settings, sys.argv[1])
+NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_userInfo_deliverImmediately_(
+    name, None, None, True
+)
+PY
+}
+
+case "${1:-}" in
+    install)
+        mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$PLIST_DST")"
+        render "${APP_DIR}/launchd/echo-os.plist.template" > "$PLIST_DST"
+        plutil -lint "$PLIST_DST" >/dev/null
+        if [ -d "$REGISTRY_DIR" ]; then
+            render "${APP_DIR}/launchd/registry-manifest.json.template" > "$MANIFEST_DST"
+        fi
+        loaded && launchctl bootout "${DOMAIN}/${LABEL}" || true
+        launchctl bootstrap "$DOMAIN" "$PLIST_DST"
+        "$PYTHON" -m echo_os.hook_install install
+        echo "Installed and started ${LABEL}. New Claude Code sessions pick up the hooks."
+        ;;
+    uninstall)
+        "$PYTHON" -m echo_os.hook_install uninstall
+        loaded && launchctl bootout "${DOMAIN}/${LABEL}" || true
+        rm -f "$PLIST_DST" "$MANIFEST_DST"
+        echo "Uninstalled ${LABEL}"
+        ;;
+    start)
+        if loaded; then launchctl kickstart "${DOMAIN}/${LABEL}"; else launchctl bootstrap "$DOMAIN" "$PLIST_DST"; fi
+        ;;
+    stop)
+        loaded && launchctl bootout "${DOMAIN}/${LABEL}" || true
+        echo "Stopped (starts again at next login; './echoctl start' to start now)"
+        ;;
+    restart)
+        launchctl kickstart -k "${DOMAIN}/${LABEL}"
+        ;;
+    show)
+        if running; then
+            post_notification MENUBAR_TOGGLE_NOTIFICATION
+        else
+            "$0" start
+            for _ in $(seq 1 40); do curl -sf "${URL}/api/health" >/dev/null && break; sleep 0.5; done
+            post_notification MENUBAR_SHOW_NOTIFICATION
+        fi
+        ;;
+    open)
+        open "$URL"
+        ;;
+    status)
+        if running; then echo "running"; elif loaded; then echo "loaded, not running"; else echo "not loaded"; fi
+        curl -sf "${URL}/api/health" && echo || echo "daemon not responding at ${URL}"
+        ;;
+    logs)
+        tail -f "$LOG_FILE"
+        ;;
+    test)
+        cd "$APP_DIR" && "$PYTHON" -m pytest -q
+        ;;
+    headline|kb|say)
+        cd "$APP_DIR" && "$PYTHON" -m echo_os.cli "$@"
+        ;;
+    *)
+        echo "Usage: echoctl [install|uninstall|start|stop|restart|show|open|status|logs|test|headline <transcript>|kb <transcript>|say <text>]"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: `./echoctl install` fills in the {{...}} placeholders and copies the result to
+     ~/Library/LaunchAgents/{{LABEL}}.plist. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{LABEL}}</string>
+
+    <!-- The menu bar app embeds the daemon: one process for the hook endpoint, the worker,
+         speech, the panel and its API. .env is loaded by echo_os.settings. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{PYTHON}}</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>echo_os.menubar</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{APP_DIR}}</string>
+
+    <!-- launchd's default PATH lacks ~/.local/bin, where the claude CLI lives. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HOME}}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on crash, but honour Quit from the menu (exit 0). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Logs go in ~/Library/Logs, never a TCC-protected folder (Desktop, Documents). -->
+    <key>StandardOutPath</key>
+    <string>{{LOG_FILE}}</string>
+    <key>StandardErrorPath</key>
+    <string>{{LOG_FILE}}</string>
+</dict>
+</plist>
