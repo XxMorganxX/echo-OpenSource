@@ -92,6 +92,8 @@ class EchoPipeline:
         self._spoken_template = spoken_template
         self._kb_status_lock = threading.Lock()
         self._kb_status: dict = {"state": "unknown", "error": None, "at": None}
+        # Optional KbAuthMonitor (the panel's KB light); each lookup reports what it saw.
+        self.kb_monitor = None
 
     # -- Hook ingress (HTTP threads) --------------------------------------------------------
     def handle_hook(self, payload: dict, *, entrypoint: str, pid: int | None, now: float) -> EchoJob | None:
@@ -202,6 +204,8 @@ class EchoPipeline:
                 "state": "error" if lookup.error else ("used" if lookup.context else "not relevant"),
                 "error": lookup.error, "at": time.time(),
             }
+        if lookup.server_status and self.kb_monitor is not None:
+            self.kb_monitor.observe(lookup.server_status)
         if lookup.error:
             logger.warning("KB agent failed open: %s", lookup.error)
         return lookup

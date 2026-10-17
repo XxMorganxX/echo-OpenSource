@@ -78,6 +78,11 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 return self._error(HTTPStatus.BAD_REQUEST, str(exc))
             return self._json({"queued": True}, HTTPStatus.ACCEPTED)
+        if parsed.path == "/api/kb/check":
+            if self.server.app.kb_monitor is None:
+                return self._json({"state": "disabled"})
+            self.server.app.kb_monitor.check()
+            return self._json(self.server.app.kb_monitor.snapshot())
         if parsed.path == "/api/mute":
             muted = bool(body.get("muted"))
             self.server.app.pipeline.preferences.set_muted(muted)

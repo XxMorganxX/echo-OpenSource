@@ -92,8 +92,43 @@ function renderFooter(state) {
   footer.append(node("span", "", `Echo when ≥ ${minutes(state.thresholds.min_turn_seconds)} and ≥ ${state.thresholds.min_tool_calls} tool calls`));
   footer.append(node("span", "", `Voice: ${state.voice}`));
   const kb = state.kb || {};
-  const kbText = kb.state === "error" ? `KB: ${kb.error}` : `KB: ${kb.state || "unknown"}`;
-  footer.append(node("span", kb.state === "error" ? "warn" : "", kbText));
+  const lastKb = { used: "used", "not relevant": "not relevant", error: "failed" }[kb.state];
+  if (lastKb) footer.append(node("span", kb.state === "error" ? "warn" : "", `Last KB lookup: ${lastKb}`));
+}
+
+const KB_LIGHT_TEXT = {
+  connected: "Knowledge base connected",
+  "needs-auth": "Knowledge base needs login: in Claude Code run /mcp, pick notes-kb, then Authenticate",
+  failed: "Knowledge base unreachable (notes-kb failed to connect)",
+  missing: "notes-kb isn't configured in Claude Code",
+  disabled: "Knowledge base agent is turned off (ECHO_OS_KB_AGENT=false)",
+  checking: "Checking the knowledge base login…",
+  unknown: "Knowledge base status not checked yet",
+};
+
+function renderKbLight(auth) {
+  const light = el("kbLight");
+  const state = auth.state || "unknown";
+  light.dataset.state = state;
+  let label = KB_LIGHT_TEXT[state] || KB_LIGHT_TEXT.unknown;
+  if (auth.checked_at && state !== "checking") label += ` · ${auth.source === "kb lookup" ? "seen" : "checked"} ${ago(auth.checked_at)}`;
+  if (state !== "disabled") label += " · click to re-check";
+  light.title = label;
+  light.setAttribute("aria-label", label);
+}
+
+let kbChecking = false;
+async function recheckKb() {
+  if (kbChecking) return;
+  kbChecking = true;
+  renderKbLight({ state: "checking" });
+  try {
+    renderKbLight(await api("POST", "/api/kb/check", {}));
+  } catch (error) {
+    renderKbLight({ state: "unknown" });
+  } finally {
+    kbChecking = false;
+  }
 }
 
 function renderMute() {
@@ -110,6 +145,7 @@ async function refresh() {
     muted = state.muted;
     el("liveCount").textContent = `${state.sessions.length} live`;
     renderMute();
+    if (!kbChecking) renderKbLight(state.kb_auth || {});
     renderSessions(state.sessions);
     renderEchoes(state.echoes);
     renderFooter(state);
@@ -156,6 +192,7 @@ el("muteButton").addEventListener("click", async () => {
   await api("POST", "/api/mute", { muted }).catch(() => refresh());
 });
 el("promptButton").addEventListener("click", () => openPrompt().catch(showError));
+el("kbLight").addEventListener("click", recheckKb);
 el("promptCancel").addEventListener("click", () => el("promptCard").classList.add("hidden"));
 el("promptSave").addEventListener("click", savePrompt);
 el("promptInput").addEventListener("input", () => {

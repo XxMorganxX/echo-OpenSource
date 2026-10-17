@@ -66,6 +66,8 @@ MAX_JOB_AGE_SECONDS = 10 * 60
 
 # -- Pipeline ------------------------------------------------------------------------
 KB_AGENT_ENABLED = os.environ.get("ECHO_OS_KB_AGENT", "true").lower() == "true"
+# How often the panel's KB light re-checks notes-kb's login (`claude mcp get`, no model call).
+KB_STATUS_CHECK_SECONDS = 5 * 60
 # Spoken text = call sign + headline.
 SPOKEN_TEMPLATE = "{call_sign}. {headline}"
 RECENT_ECHOES_LIMIT = 30

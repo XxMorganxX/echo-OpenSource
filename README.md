@@ -18,7 +18,8 @@ by the session's call sign:
 - **One speech queue.** Echoes, replays and anything sent to `POST /api/speak` play one at a time,
   so voices never overlap. Other tools should speak through that endpoint.
 - **A tiny menu bar app** (same framework as the to-do app) that shows live sessions and recent
-  echoes, with mute and replay.
+  echoes, with mute, replay, and a KB light that shows whether notes-kb is logged in (click it to
+  re-check).
 
 Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 [headline](echo_os/agents/headline/README.md), [KB relevance](echo_os/agents/kb_relevance/README.md).

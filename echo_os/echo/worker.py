@@ -60,8 +60,8 @@ class EchoWorker(QueueThread):
 
 
 class PeriodicTask:
-    def __init__(self, task: Callable[[], None], *, interval_seconds: float, name: str):
-        self._task, self._interval = task, interval_seconds
+    def __init__(self, task: Callable[[], None], *, interval_seconds: float, name: str, run_first: bool = False):
+        self._task, self._interval, self._run_first = task, interval_seconds, run_first
         self._stopped = threading.Event()
         self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
 
@@ -73,8 +73,13 @@ class PeriodicTask:
         self._thread.join(timeout=2.0)
 
     def _loop(self) -> None:
+        if self._run_first:
+            self._run_once()
         while not self._stopped.wait(self._interval):
-            try:
-                self._task()
-            except Exception:
-                logger.exception("%s failed", self._thread.name)
+            self._run_once()
+
+    def _run_once(self) -> None:
+        try:
+            self._task()
+        except Exception:
+            logger.exception("%s failed", self._thread.name)

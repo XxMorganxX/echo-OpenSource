@@ -37,6 +37,22 @@ button, textarea { font: inherit; }
 .icon-button.is-on { border-color: var(--warning); color: var(--warning); }
 .icon-button:focus-visible, .text-button:focus-visible, .primary-button:focus-visible, .replay:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+.kb-light {
+  display: inline-flex; align-items: center; gap: 5px; align-self: center;
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 999px; cursor: pointer;
+}
+.kb-light:hover { background: rgba(255, 255, 255, 0.08); }
+.kb-light:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.kb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.kb-light[data-state="connected"] .kb-dot { background: var(--success); box-shadow: 0 0 6px rgba(63, 185, 80, 0.6); }
+.kb-light[data-state="needs-auth"] { color: var(--warning); }
+.kb-light[data-state="needs-auth"] .kb-dot { background: var(--warning); }
+.kb-light[data-state="failed"], .kb-light[data-state="missing"] { color: var(--danger); }
+.kb-light[data-state="failed"] .kb-dot, .kb-light[data-state="missing"] .kb-dot { background: var(--danger); }
+.kb-light[data-state="checking"] .kb-dot { animation: pulse 1s ease-in-out infinite; }
+.kb-light[data-state="disabled"] { opacity: 0.5; }
+
 .sessions, .echoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .sessions { gap: 4px; }
 .session { display: flex; align-items: center; gap: 8px; min-width: 0; }

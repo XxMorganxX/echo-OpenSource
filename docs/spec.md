@@ -56,6 +56,7 @@ summaries could bleed between sessions, and it needs reset logic, all to save ~1
 | D10 | Model behind a `HeadlessModel` contract; v1 implementation is Claude Code headless with `claude-haiku-5-5`. | The user asked for a background Claude Code session; the contract leaves room for a direct API call later. |
 | D12 | Every voice message goes through one `Announcer` queue in the app: echoes, replays, `POST /api/speak` and `./echoctl say`. Mute is checked at play time. | Nothing ever talks over anything else, and other bots can join the same queue instead of calling a voice directly. |
 | D13 | Each announcement shows a top-right popup card (native `NSPanel`, panel colors) at the moment its speech starts; cards stack, stay up for reading time (6–20 s) and open the panel on click. Popups still show when muted. A book icon marks whether the KB informed the headline (filled blue) or not (dim outline); `/api/speak` messages have none. | Lets you read what was said; muting turns echoes into read-only. A native window avoids Notification Center grouping and Focus modes. |
+| D14 | The panel header has a KB light (green connected, amber needs login, red unreachable, gray unknown/off). Sources: `claude mcp get notes-kb` at startup, every 5 min and on click (no model call, ~3 s), plus the server status every KB lookup reports. | An expired notes-kb login otherwise shows up only as quietly worse headlines. Lookups catch it the moment an echo hits it; the timer catches it between echoes. |
 | D11 | History is an append-only JSONL (`state/echoes.jsonl`) holding every echo with its inputs, KB decision, cost and latency. Skipped turns are logged, not stored. | Doubles as the agents' logging layer and the panel's feed. |
 
 ## Hook contract
@@ -75,6 +76,7 @@ fields used: `hook_event_name`, `session_id`, `transcript_path`, `cwd`, `source`
 | GET | `/api/state` | sessions, recent echoes, mute flag, KB status, thresholds |
 | GET/PUT | `/api/prompt` | read / replace the headline system prompt |
 | POST | `/api/mute` | `{"muted": bool}` |
+| POST | `/api/kb/check` | re-check notes-kb's login now; returns the light's state |
 | POST | `/api/speak` | `{"text": str, "title"?: str}`: queue a voice message (202) |
 | POST | `/api/echoes/<id>/replay` | speak an echo again |
 

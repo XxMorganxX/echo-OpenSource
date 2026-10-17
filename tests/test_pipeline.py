@@ -217,3 +217,16 @@ def test_replay_keeps_the_kb_indicator(make_pipeline, write_transcript):
     echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
     pipeline.replay(echo.id)
     assert parts["announcer"].announced[-1].kb_informed is True
+
+
+def test_kb_lookups_feed_the_auth_light(make_pipeline, write_transcript):
+    observed = []
+
+    class Monitor:
+        def observe(self, state):
+            observed.append(state)
+
+    pipeline, parts = make_pipeline(kb=FakeKb(KbLookup(None, error="notes-kb needs-auth", server_status="needs-auth")))
+    pipeline.kb_monitor = Monitor()
+    pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert observed == ["needs-auth"]

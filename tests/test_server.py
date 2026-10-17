@@ -149,3 +149,27 @@ def test_spoken_messages_from_other_tools_have_no_kb_indicator(running):
     base, app, worker, speaker, prompt = running
     call("POST", f"{base}/api/speak", {"text": "Hi."})
     assert speaker.announced[0].kb_informed is None
+
+
+class FakeMonitor:
+    def __init__(self):
+        self.checks = 0
+
+    def snapshot(self):
+        return {"state": "connected", "checked_at": 1.0, "source": "check"}
+
+    def check(self):
+        self.checks += 1
+
+
+def test_state_includes_the_kb_auth_light(running):
+    base, app, *_ = running
+    app.kb_monitor = FakeMonitor()
+    assert call("GET", f"{base}/api/state")[1]["kb_auth"]["state"] == "connected"
+
+
+def test_kb_check_runs_a_fresh_check(running):
+    base, app, *_ = running
+    app.kb_monitor = FakeMonitor()
+    status, body = call("POST", f"{base}/api/kb/check", {})
+    assert status == 200 and body["state"] == "connected" and app.kb_monitor.checks == 1

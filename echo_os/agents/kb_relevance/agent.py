@@ -25,6 +25,8 @@ class KbLookup:
     error: str | None = None
     cost_usd: float = 0.0
     duration_ms: int = 0
+    # notes-kb's connection status as the call saw it ("connected", "needs-auth", ...); None if unknown.
+    server_status: str | None = None
 
 
 class KbRelevanceAgent:
@@ -53,16 +55,17 @@ class KbRelevanceAgent:
             return KbLookup(context=None, error=str(exc))
 
         server_status = result.mcp_status.get(config.KB_MCP_SERVER_NAME, "missing")
+        cost = dict(cost_usd=result.cost_usd, duration_ms=result.duration_ms, server_status=server_status)
         if server_status != "connected":
             # The model can't search, so its "not relevant" would be meaningless. Report why.
-            return KbLookup(None, f"{config.KB_MCP_SERVER_NAME} {server_status}", result.cost_usd, result.duration_ms)
+            return KbLookup(None, f"{config.KB_MCP_SERVER_NAME} {server_status}", **cost)
 
         answer = result.structured
         if not isinstance(answer, dict):
-            return KbLookup(None, "no structured output", result.cost_usd, result.duration_ms)
+            return KbLookup(None, "no structured output", **cost)
         context_text = str(answer.get("context") or "").strip()
         if not answer.get("relevant") or not context_text:
-            return KbLookup(None, None, result.cost_usd, result.duration_ms)
+            return KbLookup(None, None, **cost)
         sources = [str(source) for source in answer.get("sources") or []]
         context = KbContext(context=truncate(context_text, config.MAX_CONTEXT_CHARS), sources=sources)
-        return KbLookup(context, None, result.cost_usd, result.duration_ms)
+        return KbLookup(context, None, **cost)

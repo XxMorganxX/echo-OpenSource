@@ -67,3 +67,10 @@ def test_unconnected_kb_server_is_an_error_not_a_no():
     lookup = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []}, kb_status="needs-auth")).lookup(DIGEST, project="p")
     assert lookup.context is None
     assert lookup.error == "notes-kb needs-auth"
+
+
+def test_lookup_reports_the_server_status_it_saw():
+    connected = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []})).lookup(DIGEST, project="p")
+    needs_auth = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []}, kb_status="needs-auth")).lookup(DIGEST, project="p")
+    failed = KbRelevanceAgent(FakeModel(error=HeadlessModelError("timed out"))).lookup(DIGEST, project="p")
+    assert (connected.server_status, needs_auth.server_status, failed.server_status) == ("connected", "needs-auth", None)
