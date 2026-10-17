@@ -56,6 +56,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             return self._json({"prompt": self.server.app.read_prompt()})
         if path in STATIC_FILES:
             return self._static(*STATIC_FILES[path])
+        if path == "/favicon.ico":
+            return self._no_content()
         self._error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
