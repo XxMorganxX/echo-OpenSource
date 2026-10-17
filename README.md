@@ -36,8 +36,8 @@ Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 python3.13 -m venv venv
 ./venv/bin/pip install -r requirements.txt -e .
 ./echoctl test        # run the test suite
-./echoctl install
-./echoctl say "Alpha. Voice check."   # queued through the running app     # launchd agent + Claude Code hooks + Daemon Deck manifest
+./echoctl install     # launchd agent + Claude Code hooks + Daemon Deck manifest
+./echoctl say "Alpha. Voice check."   # queued through the running app
 ```
 
 `install` does three things:
@@ -74,8 +74,8 @@ panel edits in place.
 Each hook runs [`hooks/echo-hook.sh`](hooks/echo-hook.sh), which POSTs the event to
 `127.0.0.1:8431` in the background and returns at once. On `Stop` the daemon reads the turn out of
 the session transcript and checks the length gate. Then one worker runs the KB relevance agent and
-the headline agent (each is a stripped-down `claude -p` call on Haiku, about 3 seconds and a fraction
-of a cent). Last, it queues the speech. Headless sessions, including echo-OS's own calls, are
+the headline agent (each is a stripped-down `claude -p` call on Haiku that counts toward your Claude plan's usage,
+not API billing). Last, it queues the speech. Headless sessions, including echo-OS's own calls, are
 ignored.
 
 Anything else that wants to talk can join the queue:
