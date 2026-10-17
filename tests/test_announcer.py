@@ -1,6 +1,7 @@
 import threading
 
 from echo_os.echo.announcer import Announcement, Announcer
+from echo_os.echo.kb_usage import KbUsage
 from echo_os.echo.preferences import Preferences
 from echo_os.voice import VoiceError
 
@@ -27,7 +28,7 @@ class RecordingPopup:
     def __init__(self, events):
         self.events = events
 
-    def show(self, *, title, subtitle, body, kb_informed=None):
+    def show(self, *, title, subtitle, body, kb_usage=None):
         self.events.append(("popup", title))
 
 
@@ -84,11 +85,11 @@ def test_popup_receives_the_kb_indicator(tmp_path):
     received = []
 
     class Popup:
-        def show(self, *, title, subtitle, body, kb_informed):
-            received.append(kb_informed)
+        def show(self, *, title, subtitle, body, kb_usage):
+            received.append(kb_usage)
 
     announcer = Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=Popup())
-    announcer.announce(Announcement(spoken_text="x", title="A", subtitle="p", body="x", kb_informed=True))
+    announcer.announce(Announcement(spoken_text="x", title="A", subtitle="p", body="x", kb_usage=KbUsage("used", 1)))
     announcer.start()
     announcer.stop()
-    assert received == [True]
+    assert received == [KbUsage("used", 1)]

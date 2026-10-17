@@ -14,7 +14,8 @@ by the session's call sign:
 - **Editable system prompt.** Change how headlines are written from the panel. Edits apply to the
   next echo.
 - **A popup you can read.** Each echo also appears as a small card in the top-right corner while it
-  is spoken (and still appears when speech is muted).
+  is spoken (and still appears when speech is muted). Its corner shows how the KB figured in:
+  used (with the number of notes), nothing relevant, needs login, unavailable, or off.
 - **One speech queue.** Echoes, replays and anything sent to `POST /api/speak` play one at a time,
   so voices never overlap. Other tools should speak through that endpoint.
 - **A tiny menu bar app** (same framework as the to-do app) that shows live sessions and recent

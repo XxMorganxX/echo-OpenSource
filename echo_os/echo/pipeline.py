@@ -20,6 +20,7 @@ from echo_os.agents.shared.headless_model import HeadlessModelError
 from echo_os.agents.shared.text import truncate
 from echo_os.echo.announcer import Announcement
 from echo_os.echo.history import EchoHistory
+from echo_os.echo.kb_usage import kb_usage_from_record
 from echo_os.echo.preferences import Preferences
 from echo_os.sessions import SessionRegistry
 from echo_os.transcript import is_long_horizon, read_last_turn
@@ -154,7 +155,8 @@ class EchoPipeline:
                 "relevant": kb_lookup.context is not None,
                 "context": kb_lookup.context.context if kb_lookup.context else "",
                 "sources": kb_lookup.context.sources if kb_lookup.context else [],
-                "error": kb_lookup.error, "cost_usd": kb_lookup.cost_usd, "duration_ms": kb_lookup.duration_ms,
+                "error": kb_lookup.error, "server_status": kb_lookup.server_status,
+                "cost_usd": kb_lookup.cost_usd, "duration_ms": kb_lookup.duration_ms,
             }
 
         try:
@@ -171,7 +173,7 @@ class EchoPipeline:
             self.registry.set_last_headline(session.session_id, headline.text, now=now)
             self._announcer.announce(Announcement(
                 spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline,
-                kb_informed=bool(echo.kb and echo.kb["relevant"]),
+                kb_usage=kb_usage_from_record(echo.kb),
             ))
 
         echo.total_ms = int((time.monotonic() - started) * 1000)
@@ -187,7 +189,7 @@ class EchoPipeline:
         self._announcer.announce(Announcement(
             spoken_text=record["spoken_text"], title=record.get("call_sign", ""),
             subtitle=record.get("project", ""), body=record.get("headline", ""),
-            kb_informed=bool(record.get("kb") and record["kb"].get("relevant")),
+            kb_usage=kb_usage_from_record(record.get("kb")),
         ))
         return True
 

@@ -148,7 +148,7 @@ def test_speak_requires_text(running):
 def test_spoken_messages_from_other_tools_have_no_kb_indicator(running):
     base, app, worker, speaker, prompt = running
     call("POST", f"{base}/api/speak", {"text": "Hi."})
-    assert speaker.announced[0].kb_informed is None
+    assert speaker.announced[0].kb_usage is None
 
 
 class FakeMonitor:

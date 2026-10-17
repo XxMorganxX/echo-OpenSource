@@ -5,6 +5,7 @@ from echo_os.agents.headline.agent import Headline
 from echo_os.agents.kb_relevance.agent import KbContext, KbLookup
 from echo_os.agents.shared.headless_model import HeadlessModelError
 from echo_os.echo.history import EchoHistory
+from echo_os.echo.kb_usage import KbUsage
 from echo_os.echo.pipeline import EchoJob, EchoPipeline
 from echo_os.echo.preferences import Preferences
 from echo_os.sessions import SessionRegistry
@@ -198,25 +199,34 @@ def test_replay_speaks_a_stored_echo_again(make_pipeline, write_transcript):
     assert pipeline.replay("nope") is False
 
 
-def test_announcement_says_whether_the_kb_informed_it(make_pipeline, write_transcript):
-    used = FakeKb(KbLookup(KbContext("Billing ships Friday.", ["Roadmap"])))
+def test_announcement_carries_kb_usage_with_note_count(make_pipeline, write_transcript):
+    used = FakeKb(KbLookup(KbContext("Billing ships Friday.", ["Roadmap", "Launch plan"]), server_status="connected"))
     pipeline, parts = make_pipeline(kb=used)
     pipeline.process(stop_job(long_turn(write_transcript, "a.jsonl")), now=T0.timestamp() + 410)
-    assert parts["announcer"].announced[-1].kb_informed is True
+    assert parts["announcer"].announced[-1].kb_usage == KbUsage("used", notes=2)
 
 
-def test_kb_not_relevant_or_failed_is_marked_not_informed(make_pipeline, write_transcript):
-    for lookup in (KbLookup(None), KbLookup(None, error="notes-kb needs-auth")):
+def test_kb_usage_distinguishes_nothing_relevant_from_logged_out(make_pipeline, write_transcript):
+    cases = [(KbLookup(None, server_status="connected"), KbUsage("not-relevant")),
+             (KbLookup(None, error="notes-kb needs-auth", server_status="needs-auth"), KbUsage("needs-auth")),
+             (KbLookup(None, error="timed out after 40s"), KbUsage("unavailable"))]
+    for lookup, expected in cases:
         pipeline, parts = make_pipeline(kb=FakeKb(lookup))
         pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
-        assert parts["announcer"].announced[-1].kb_informed is False
+        assert parts["announcer"].announced[-1].kb_usage == expected
 
 
-def test_replay_keeps_the_kb_indicator(make_pipeline, write_transcript):
-    pipeline, parts = make_pipeline(kb=FakeKb(KbLookup(KbContext("ctx", []))))
+def test_kb_usage_is_off_when_the_kb_agent_is_disabled(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(kb_enabled=False)
+    pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["announcer"].announced[-1].kb_usage == KbUsage("off")
+
+
+def test_replay_keeps_the_kb_usage(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(kb=FakeKb(KbLookup(KbContext("ctx", ["n"]), server_status="connected")))
     echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
     pipeline.replay(echo.id)
-    assert parts["announcer"].announced[-1].kb_informed is True
+    assert parts["announcer"].announced[-1].kb_usage == KbUsage("used", notes=1)
 
 
 def test_kb_lookups_feed_the_auth_light(make_pipeline, write_transcript):

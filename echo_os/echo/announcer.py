@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
+from echo_os.echo.kb_usage import KbUsage
 from echo_os.echo.preferences import Preferences
 from echo_os.echo.worker import QueueThread
 from echo_os.voice import VoiceError, VoiceOutput
@@ -25,12 +26,12 @@ class Announcement:
     title: str  # call sign, or the caller's name for /api/speak
     subtitle: str  # project
     body: str  # headline
-    # True: the KB informed the headline. False: it didn't. None: not an echo (e.g. /api/speak).
-    kb_informed: bool | None = None
+    # How the KB figured in this echo; None for messages that aren't echoes (e.g. /api/speak).
+    kb_usage: KbUsage | None = None
 
 
 class Popup(Protocol):
-    def show(self, *, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
+    def show(self, *, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
         """Displays the popup and returns at once (it dismisses itself)."""
 
 
@@ -46,7 +47,7 @@ class Announcer(QueueThread):
         if self._popup is not None:
             try:
                 self._popup.show(title=announcement.title, subtitle=announcement.subtitle, body=announcement.body,
-                                 kb_informed=announcement.kb_informed)
+                                 kb_usage=announcement.kb_usage)
             except Exception:
                 logger.exception("Popup failed")
         if self._preferences.muted:

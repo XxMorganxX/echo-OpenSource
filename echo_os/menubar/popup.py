@@ -12,6 +12,7 @@ from typing import Callable
 
 from AppKit import (
     NSBackingStoreBuffered,
+    NSLineBreakByTruncatingTail,
     NSImage,
     NSImageView,
     NSBezierPath,
@@ -31,13 +32,14 @@ from AppKit import (
 from PyObjCTools import AppHelper
 
 from echo_os import settings
+from echo_os.echo.kb_usage import KbUsage
 
 logger = logging.getLogger(__name__)
 
 PADDING_X = 14
 PADDING_Y = 11
 LINE_GAP = 4
-KB_ICON_SIZE = 14
+KB_ICON_SIZE = 12
 KB_ICON_GAP = 6
 CORNER_RADIUS = 12
 FADE_SECONDS = 0.25
@@ -49,10 +51,17 @@ TEXT = NSColor.colorWithSRGBRed_green_blue_alpha_(240 / 255, 246 / 255, 252 / 25
 MUTED = NSColor.colorWithSRGBRed_green_blue_alpha_(139 / 255, 148 / 255, 158 / 255, 1.0)
 ACCENT = NSColor.colorWithSRGBRed_green_blue_alpha_(88 / 255, 166 / 255, 255 / 255, 1.0)
 
-# Book icon: filled accent when the knowledge base informed the headline, dim outline when it didn't.
-KB_ICONS = {
-    True: ("book.fill", ACCENT, "Informed by your knowledge base"),
-    False: ("book", MUTED.colorWithAlphaComponent_(0.6), "Knowledge base not used"),
+WARNING = NSColor.colorWithSRGBRed_green_blue_alpha_(210 / 255, 153 / 255, 34 / 255, 1.0)
+
+# KB status in the card's top-right corner: (SF Symbol, color, label, tooltip) per KbUsage state.
+KB_STATUS = {
+    "used": ("book.fill", ACCENT, "KB · {notes}", "Informed by your knowledge base ({notes})"),
+    "not-relevant": ("book", MUTED, "KB · nothing relevant", "Knowledge base searched; nothing relevant"),
+    "needs-auth": ("lock.fill", WARNING, "KB · needs login",
+                   "notes-kb needs login: in Claude Code run /mcp, pick notes-kb, Authenticate"),
+    "unavailable": ("exclamationmark.triangle.fill", WARNING, "KB · unavailable",
+                    "Knowledge base lookup failed (see echo-OS log)"),
+    "off": ("book", MUTED.colorWithAlphaComponent_(0.6), "KB off", "Knowledge base agent is turned off"),
 }
 
 
@@ -103,30 +112,50 @@ def _label(text: str, font, color, width: float):
     return field
 
 
-def _kb_icon(kb_informed: bool):
-    symbol, color, description = KB_ICONS[kb_informed]
-    view = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, KB_ICON_SIZE, KB_ICON_SIZE))
-    view.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, description))
-    view.setContentTintColor_(color)
-    view.setToolTip_(description)
-    return view
+def _kb_status_views(usage: KbUsage) -> tuple:
+    symbol, color, label_template, tooltip_template = KB_STATUS.get(usage.state, KB_STATUS["unavailable"])
+    notes = f"{usage.notes} note" + ("" if usage.notes == 1 else "s")
+    label_text, tooltip = label_template.format(notes=notes), tooltip_template.format(notes=notes)
+    icon = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, KB_ICON_SIZE, KB_ICON_SIZE))
+    icon.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, tooltip))
+    icon.setContentTintColor_(color)
+    icon.setToolTip_(tooltip)
+    label = NSTextField.labelWithString_(label_text)
+    label.setFont_(NSFont.systemFontOfSize_weight_(10.5, 0.3))
+    label.setTextColor_(color)
+    label.setToolTip_(tooltip)
+    label.sizeToFit()
+    return icon, label
 
 
-def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None, kb_informed: bool | None = None):
+def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None, kb_usage: KbUsage | None = None):
     """The card view, sized to its text. Separate from the window so it can be rendered offscreen."""
     width = settings.POPUP_WIDTH
     text_width = width - 2 * PADDING_X
-    heading_width = text_width - (KB_ICON_SIZE + KB_ICON_GAP if kb_informed is not None else 0)
+    status = _kb_status_views(kb_usage) if kb_usage is not None else None
+    status_width = (KB_ICON_SIZE + 3 + status[1].frame().size.width) if status else 0
+    heading_width = text_width - (status_width + KB_ICON_GAP if status else 0)
     heading = f"{title}  ·  {subtitle}" if subtitle else title
-    heading_label = _label(heading, NSFont.boldSystemFontOfSize_(12), TEXT, heading_width)
+    # One line, truncated with an ellipsis: a long project name must not push the headline down.
+    heading_label = NSTextField.labelWithString_(heading)
+    heading_label.setFont_(NSFont.boldSystemFontOfSize_(12))
+    heading_label.setTextColor_(TEXT)
+    heading_label.setLineBreakMode_(NSLineBreakByTruncatingTail)
+    heading_label.setFrameSize_((heading_width, heading_label.fittingSize().height))
     if subtitle:
         # Call sign in white, project muted.
-        from AppKit import NSAttributedString, NSFontAttributeName, NSForegroundColorAttributeName, NSMutableAttributedString
+        from AppKit import (NSAttributedString, NSFontAttributeName, NSForegroundColorAttributeName,
+                            NSMutableAttributedString, NSMutableParagraphStyle, NSParagraphStyleAttributeName)
 
+        # Attributed text ignores the label's line-break mode, so truncation is set on the text itself.
+        truncating = NSMutableParagraphStyle.alloc().init()
+        truncating.setLineBreakMode_(NSLineBreakByTruncatingTail)
         styled = NSMutableAttributedString.alloc().initWithString_attributes_(
-            title, {NSFontAttributeName: NSFont.boldSystemFontOfSize_(12), NSForegroundColorAttributeName: TEXT})
+            title, {NSFontAttributeName: NSFont.boldSystemFontOfSize_(12), NSForegroundColorAttributeName: TEXT,
+                    NSParagraphStyleAttributeName: truncating})
         styled.appendAttributedString_(NSAttributedString.alloc().initWithString_attributes_(
-            f"  ·  {subtitle}", {NSFontAttributeName: NSFont.systemFontOfSize_(12), NSForegroundColorAttributeName: MUTED}))
+            f"  ·  {subtitle}", {NSFontAttributeName: NSFont.systemFontOfSize_(12), NSForegroundColorAttributeName: MUTED,
+                                 NSParagraphStyleAttributeName: truncating}))
         heading_label.setAttributedStringValue_(styled)
     body_label = _label(body, NSFont.systemFontOfSize_(13), TEXT, text_width)
 
@@ -136,12 +165,16 @@ def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | Non
     heading_label.setFrameOrigin_((PADDING_X, PADDING_Y + body_label.frame().size.height + LINE_GAP))
     card.addSubview_(heading_label)
     card.addSubview_(body_label)
-    if kb_informed is not None:
-        icon = _kb_icon(kb_informed)
+    if status is not None:
+        # Right-aligned on the heading's first line: [icon] KB · label
+        icon, label = status
         heading_frame = heading_label.frame()
-        icon.setFrameOrigin_((width - PADDING_X - KB_ICON_SIZE,
-                              heading_frame.origin.y + heading_frame.size.height - KB_ICON_SIZE - 1))
+        middle = heading_frame.origin.y + heading_frame.size.height / 2
+        label_size = label.frame().size
+        label.setFrameOrigin_((width - PADDING_X - label_size.width, round(middle - label_size.height / 2)))
+        icon.setFrameOrigin_((label.frame().origin.x - 3 - KB_ICON_SIZE, round(middle - KB_ICON_SIZE / 2)))
         card.addSubview_(icon)
+        card.addSubview_(label)
     return card
 
 
@@ -152,10 +185,10 @@ class PopupPresenter:
         self._on_click = on_click
         self._windows: list = []
 
-    def show(self, *, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
-        AppHelper.callAfter(self._show_on_main, title, subtitle, body, kb_informed)
+    def show(self, *, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
+        AppHelper.callAfter(self._show_on_main, title, subtitle, body, kb_usage)
 
-    def _show_on_main(self, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
+    def _show_on_main(self, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
         logger.info("Popup show: %s (%d on screen)", title, len(self._windows))
         holder: dict = {}
 
@@ -164,7 +197,7 @@ class PopupPresenter:
             if self._on_click is not None:
                 self._on_click()
 
-        card = build_card(title=title, subtitle=subtitle, body=body, on_click=clicked, kb_informed=kb_informed)
+        card = build_card(title=title, subtitle=subtitle, body=body, on_click=clicked, kb_usage=kb_usage)
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             card.frame(), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False
         )
