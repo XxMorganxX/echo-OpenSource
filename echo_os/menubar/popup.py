@@ -1,8 +1,12 @@
 """Top-right popup cards that show each announcement while it is spoken.
 
-The announcer calls `show` from its own thread; everything AppKit happens on the main thread via
-`AppHelper.callAfter`. Cards stack downward when a new one arrives before the last has gone, and
-clicking one dismisses it and opens the panel.
+The announcer calls `show`/`resolve` from other threads; everything AppKit happens on the main
+thread via `AppHelper.callAfter`. Cards stack downward.
+
+Two kinds of card:
+- Plain: fades after reading time; clicking it dismisses it and opens the panel.
+- Sticky (has questions or suggestions): stays until you close it with its ✕, reply to that Claude
+  session, or the session ends. Clicking it opens the panel and leaves it up.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from typing import Callable
 
 from AppKit import (
     NSBackingStoreBuffered,
+    NSButton,
     NSLineBreakByTruncatingTail,
     NSImage,
     NSImageView,
@@ -40,6 +45,14 @@ PADDING_X = 14
 PADDING_Y = 11
 LINE_GAP = 4
 KB_ICON_SIZE = 12
+SECTION_GAP = 9
+ITEM_GAP = 3
+CLOSE_SIZE = 16
+CLOSE_GAP = 6
+BULLET = "•"
+BULLET_INDENT = 14
+QUESTIONS_HEADING = "Questions for you"
+SUGGESTIONS_HEADING = "Suggestions"
 KB_ICON_GAP = 6
 CORNER_RADIUS = 12
 FADE_SECONDS = 0.25
@@ -65,9 +78,37 @@ KB_STATUS = {
 }
 
 
+def is_sticky(announcement) -> bool:
+    return bool(announcement.questions or announcement.suggestions)
+
+
 def display_seconds(body: str) -> float:
+    """How long a plain (non-sticky) card stays up: roughly reading time, clamped."""
     reading = len(body.split()) / settings.POPUP_READING_WORDS_PER_SECOND
     return min(settings.POPUP_MAX_SECONDS, max(settings.POPUP_MIN_SECONDS, reading + 2))
+
+
+class CloseButton(NSButton):
+    """Borderless ✕ that calls a Python function; it is its own target so nothing else must stay alive."""
+
+    def initWithFrame_onClose_(self, frame, on_close):  # noqa: N802
+        self = self.initWithFrame_(frame)
+        if self is None:
+            return None
+        self.on_close = on_close
+        self.setBordered_(False)
+        self.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_("xmark", "Dismiss"))
+        self.setContentTintColor_(MUTED)
+        self.setToolTip_("Dismiss")
+        self.setTarget_(self)
+        self.setAction_("fire:")
+        return self
+
+    def acceptsFirstMouse_(self, event):  # noqa: N802
+        return True
+
+    def fire_(self, sender):  # noqa: N802
+        self.on_close()
 
 
 class CardView(NSView):
@@ -107,8 +148,9 @@ def _label(text: str, font, color, width: float):
     field.setTextColor_(color)
     field.setPreferredMaxLayoutWidth_(width)
     field.setSelectable_(False)
-    size = field.fittingSize()
-    field.setFrameSize_((width, size.height))
+    # Measure at the exact drawing width: fittingSize can come up a line short when a wrap lands on a hyphen.
+    height = field.cell().cellSizeForBounds_(NSMakeRect(0, 0, width, 10_000)).height
+    field.setFrameSize_((width, height))
     return field
 
 
@@ -128,13 +170,46 @@ def _kb_status_views(usage: KbUsage) -> tuple:
     return icon, label
 
 
-def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None, kb_usage: KbUsage | None = None):
-    """The card view, sized to its text. Separate from the window so it can be rendered offscreen."""
+def _item_sections(questions: tuple[str, ...], suggestions: tuple[str, ...], width: float) -> list:
+    """Labels for the bulleted sections, top to bottom: a small caps heading, then one label per item."""
+    views = []
+    for heading, items in ((QUESTIONS_HEADING, questions), (SUGGESTIONS_HEADING, suggestions)):
+        if not items:
+            continue
+        views.append(("heading", _label(heading, NSFont.systemFontOfSize_weight_(10.5, 0.4), MUTED, width)))
+        for item in items:
+            views.append(("item", _bullet_row(item, width)))
+    return views
+
+
+def _bullet_row(item: str, width: float):
+    """A bullet in its own column so wrapped lines hang under the text, not under the bullet."""
+    font = NSFont.systemFontOfSize_(12.5)
+    text = _label(item, font, TEXT, width - BULLET_INDENT)
+    bullet = NSTextField.labelWithString_(BULLET)
+    bullet.setFont_(font)
+    bullet.setTextColor_(MUTED)
+    bullet.sizeToFit()
+    row = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, width, text.frame().size.height))
+    text.setFrameOrigin_((BULLET_INDENT, 0))
+    bullet.setFrameOrigin_((2, text.frame().size.height - bullet.frame().size.height))
+    row.addSubview_(bullet)
+    row.addSubview_(text)
+    return row
+
+
+def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None, kb_usage: KbUsage | None = None,
+               questions: tuple[str, ...] = (), suggestions: tuple[str, ...] = (), on_close: Callable | None = None):
+    """The card view, sized to its text. Separate from the window so it can be rendered offscreen.
+
+    `on_close` adds a ✕ in the top-right corner (sticky cards).
+    """
     width = settings.POPUP_WIDTH
     text_width = width - 2 * PADDING_X
+    close_width = CLOSE_SIZE + CLOSE_GAP if on_close else 0
     status = _kb_status_views(kb_usage) if kb_usage is not None else None
     status_width = (KB_ICON_SIZE + 3 + status[1].frame().size.width) if status else 0
-    heading_width = text_width - (status_width + KB_ICON_GAP if status else 0)
+    heading_width = text_width - close_width - (status_width + KB_ICON_GAP if status else 0)
     heading = f"{title}  ·  {subtitle}" if subtitle else title
     # One line, truncated with an ellipsis: a long project name must not push the headline down.
     heading_label = NSTextField.labelWithString_(heading)
@@ -158,23 +233,37 @@ def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | Non
                                  NSParagraphStyleAttributeName: truncating}))
         heading_label.setAttributedStringValue_(styled)
     body_label = _label(body, NSFont.systemFontOfSize_(13), TEXT, text_width)
+    sections = _item_sections(questions, suggestions, text_width)
 
-    height = PADDING_Y + heading_label.frame().size.height + LINE_GAP + body_label.frame().size.height + PADDING_Y
+    # Stack top to bottom: heading, headline, then each section. AppKit's y grows upward, so lay out
+    # from the bottom of the stack.
+    stack = [heading_label, body_label] + [view for _, view in sections]
+    gaps = [LINE_GAP] + [SECTION_GAP if kind == "heading" else ITEM_GAP for kind, _ in sections]
+    height = PADDING_Y * 2 + sum(view.frame().size.height for view in stack) + sum(gaps)
     card = CardView.alloc().initWithFrame_onClick_(NSMakeRect(0, 0, width, height), on_click)
-    body_label.setFrameOrigin_((PADDING_X, PADDING_Y))
-    heading_label.setFrameOrigin_((PADDING_X, PADDING_Y + body_label.frame().size.height + LINE_GAP))
-    card.addSubview_(heading_label)
-    card.addSubview_(body_label)
+    y = height - PADDING_Y
+    for index, view in enumerate(stack):
+        if index:
+            y -= gaps[index - 1]
+        y -= view.frame().size.height
+        view.setFrameOrigin_((PADDING_X, y))
+        card.addSubview_(view)
     if status is not None:
         # Right-aligned on the heading's first line: [icon] KB · label
         icon, label = status
         heading_frame = heading_label.frame()
         middle = heading_frame.origin.y + heading_frame.size.height / 2
         label_size = label.frame().size
-        label.setFrameOrigin_((width - PADDING_X - label_size.width, round(middle - label_size.height / 2)))
+        label.setFrameOrigin_((width - PADDING_X - close_width - label_size.width, round(middle - label_size.height / 2)))
         icon.setFrameOrigin_((label.frame().origin.x - 3 - KB_ICON_SIZE, round(middle - KB_ICON_SIZE / 2)))
         card.addSubview_(icon)
         card.addSubview_(label)
+    if on_close is not None:
+        heading_frame = heading_label.frame()
+        middle = heading_frame.origin.y + heading_frame.size.height / 2
+        close = CloseButton.alloc().initWithFrame_onClose_(
+            NSMakeRect(width - PADDING_X - CLOSE_SIZE + 3, round(middle - CLOSE_SIZE / 2), CLOSE_SIZE, CLOSE_SIZE), on_close)
+        card.addSubview_(close)
     return card
 
 
@@ -183,21 +272,29 @@ class PopupPresenter:
 
     def __init__(self, *, on_click: Callable[[], None] | None = None):
         self._on_click = on_click
-        self._windows: list = []
+        self._cards: list[tuple] = []  # (window, session_id, sticky), top to bottom
 
-    def show(self, *, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
-        AppHelper.callAfter(self._show_on_main, title, subtitle, body, kb_usage)
+    def show(self, announcement) -> None:
+        AppHelper.callAfter(self._show_on_main, announcement)
 
-    def _show_on_main(self, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
-        logger.info("Popup show: %s (%d on screen)", title, len(self._windows))
+    def resolve(self, session_id: str) -> None:
+        AppHelper.callAfter(self._resolve_on_main, session_id)
+
+    def _show_on_main(self, announcement) -> None:
+        sticky = is_sticky(announcement)
+        logger.info("Popup show: %s%s (%d on screen)", announcement.title, " [sticky]" if sticky else "", len(self._cards))
         holder: dict = {}
 
         def clicked():
-            self._dismiss(holder.get("window"))
+            if not sticky:
+                self._dismiss(holder.get("window"))
             if self._on_click is not None:
                 self._on_click()
 
-        card = build_card(title=title, subtitle=subtitle, body=body, on_click=clicked, kb_usage=kb_usage)
+        card = build_card(title=announcement.title, subtitle=announcement.subtitle, body=announcement.body,
+                          on_click=clicked, kb_usage=announcement.kb_usage,
+                          questions=announcement.questions, suggestions=announcement.suggestions,
+                          on_close=(lambda: self._dismiss(holder.get("window"))) if sticky else None)
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             card.frame(), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False
         )
@@ -212,17 +309,27 @@ class PopupPresenter:
         window.setContentView_(card)
         window.setAlphaValue_(0.0)
 
-        self._windows.append(window)
+        self._cards.append((window, announcement.session_id, sticky))
         self._layout()
         window.orderFrontRegardless()
         window.animator().setAlphaValue_(1.0)
-        AppHelper.callLater(display_seconds(body), self._dismiss, window)
+        if not sticky:
+            AppHelper.callLater(display_seconds(announcement.body), self._dismiss, window)
+
+    def _resolve_on_main(self, session_id: str) -> None:
+        if not session_id:
+            return
+        for window, card_session, sticky in list(self._cards):
+            if sticky and card_session == session_id:
+                logger.info("Popup resolved: session %s answered or ended", session_id[:8])
+                self._dismiss(window)
 
     def _dismiss(self, window) -> None:
-        if window is None or window not in self._windows:
+        entry = next((card for card in self._cards if card[0] is window), None)
+        if entry is None:
             return
-        self._windows.remove(window)
-        logger.info("Popup dismiss (%d left)", len(self._windows))
+        self._cards.remove(entry)
+        logger.info("Popup dismiss (%d left)", len(self._cards))
         window.animator().setAlphaValue_(0.0)
         AppHelper.callLater(FADE_SECONDS, window.orderOut_, None)
         self._layout()
@@ -234,7 +341,7 @@ class PopupPresenter:
         visible = screen.visibleFrame()
         top = visible.origin.y + visible.size.height - settings.POPUP_MARGIN
         x = visible.origin.x + visible.size.width - settings.POPUP_WIDTH - settings.POPUP_MARGIN
-        for window in self._windows:
+        for window, _, _ in self._cards:
             height = window.frame().size.height
             top -= height
             window.setFrameOrigin_((x, top))

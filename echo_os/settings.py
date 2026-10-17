@@ -82,6 +82,7 @@ POPUP_GAP = 8
 POPUP_READING_WORDS_PER_SECOND = 2.5
 POPUP_MIN_SECONDS = 6
 POPUP_MAX_SECONDS = 20
+# Cards with questions or suggestions have no timer: they stay until closed, answered or the session ends.
 
 # -- Voice -----------------------------------------------------------------------------
 VOICE_PROVIDER = os.environ.get("ECHO_OS_VOICE", "macos-say")  # macos-say | openai

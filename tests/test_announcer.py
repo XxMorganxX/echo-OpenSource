@@ -28,8 +28,8 @@ class RecordingPopup:
     def __init__(self, events):
         self.events = events
 
-    def show(self, *, title, subtitle, body, kb_usage=None):
-        self.events.append(("popup", title))
+    def show(self, announcement):
+        self.events.append(("popup", announcement.title))
 
 
 def make(tmp_path, **voice_kwargs):
@@ -85,11 +85,31 @@ def test_popup_receives_the_kb_indicator(tmp_path):
     received = []
 
     class Popup:
-        def show(self, *, title, subtitle, body, kb_usage):
-            received.append(kb_usage)
+        def show(self, announcement):
+            received.append(announcement.kb_usage)
 
     announcer = Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=Popup())
     announcer.announce(Announcement(spoken_text="x", title="A", subtitle="p", body="x", kb_usage=KbUsage("used", 1)))
     announcer.start()
     announcer.stop()
     assert received == [KbUsage("used", 1)]
+
+
+def test_resolve_reaches_the_popup_immediately_not_behind_the_queue(tmp_path):
+    resolved = []
+
+    class Popup:
+        def show(self, announcement):
+            pass
+
+        def resolve(self, session_id):
+            resolved.append(session_id)
+
+    announcer = Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=Popup())
+    announcer.announce(item("Alpha"))  # queued, thread not started
+    announcer.resolve("s1")
+    assert resolved == ["s1"]
+
+
+def test_resolve_without_a_popup_is_harmless(tmp_path):
+    Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=None).resolve("s1")

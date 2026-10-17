@@ -14,8 +14,21 @@ SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent / "system_prompt.md"
 # Input shaping: the digest is truncated before it reaches the model.
 MAX_ASK_CHARS = 1_500
 MAX_RESPONSE_CHARS = 6_000
-# Output shaping: a safety cap in case the model ignores the length rule.
+# Output shaping: safety caps in case the model ignores the length rules.
 MAX_HEADLINE_CHARS = 280
+# Questions and suggestions are shown as bullets on screen, never spoken.
+MAX_ITEMS_PER_LIST = 4
+MAX_ITEM_CHARS = 160
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headline": {"type": "string"},
+        "questions": {"type": "array", "items": {"type": "string"}},
+        "suggestions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["headline", "questions", "suggestions"],
+}
 
 USER_MESSAGE_TEMPLATE = """\
 Project: {project}
@@ -32,7 +45,7 @@ The agent's final response:
 {response}
 </response>
 {kb_section}
-Write the headline."""
+Write the headline, and list the questions and suggestions."""
 
 KB_SECTION_TEMPLATE = """
 Knowledge-base context (use only if it helps):

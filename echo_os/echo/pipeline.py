@@ -11,7 +11,7 @@ import logging
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 from echo_os.agents.headline.agent import HeadlineAgent
@@ -32,6 +32,8 @@ STORED_ASK_CHARS = 300
 
 class AnnouncementQueue(Protocol):
     def announce(self, announcement: Announcement) -> None: ...
+
+    def resolve(self, session_id: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class Echo:
     headline_ms: int = 0
     total_ms: int = 0
     error: str | None = None
+    questions: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
 
 
 class EchoPipeline:
@@ -109,10 +113,13 @@ class EchoPipeline:
 
         if event == "SessionEnd":
             self.registry.end(session_id)
+            self._announcer.resolve(session_id)
             return None
         self.registry.touch(session_id, cwd=cwd, pid=pid, now=now)
         if event == "UserPromptSubmit":
             self.registry.mark_working(session_id, now=now)
+            # You replied to this session, so its questions are answered.
+            self._announcer.resolve(session_id)
         elif event == "Stop":
             self.registry.mark_idle(session_id, now=now)
             transcript_path = payload.get("transcript_path")
@@ -168,12 +175,14 @@ class EchoPipeline:
             logger.error("Headline failed for %s: %s", echo.call_sign, exc)
         else:
             echo.headline = headline.text
+            echo.questions, echo.suggestions = list(headline.questions), list(headline.suggestions)
             echo.headline_cost_usd, echo.headline_ms = headline.cost_usd, headline.duration_ms
             echo.spoken_text = self._spoken_template.format(call_sign=echo.call_sign, headline=headline.text)
             self.registry.set_last_headline(session.session_id, headline.text, now=now)
             self._announcer.announce(Announcement(
                 spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline,
                 kb_usage=kb_usage_from_record(echo.kb),
+                questions=tuple(echo.questions), suggestions=tuple(echo.suggestions), session_id=echo.session_id,
             ))
 
         echo.total_ms = int((time.monotonic() - started) * 1000)
@@ -190,6 +199,8 @@ class EchoPipeline:
             spoken_text=record["spoken_text"], title=record.get("call_sign", ""),
             subtitle=record.get("project", ""), body=record.get("headline", ""),
             kb_usage=kb_usage_from_record(record.get("kb")),
+            questions=tuple(record.get("questions") or ()), suggestions=tuple(record.get("suggestions") or ()),
+            session_id=record.get("session_id", ""),
         ))
         return True
 

@@ -1,4 +1,5 @@
-"""Headline agent: turns a finished turn into one or two speakable sentences."""
+"""Headline agent: turns a finished turn into one or two speakable sentences, plus the questions and
+suggestions the agent left for you, which are shown on screen rather than spoken."""
 
 from __future__ import annotations
 
@@ -16,6 +17,13 @@ class Headline:
     text: str
     cost_usd: float
     duration_ms: int
+    questions: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
+
+
+def _clean_items(raw) -> tuple[str, ...]:
+    items = [truncate(to_speech(str(item)), config.MAX_ITEM_CHARS) for item in raw or []]
+    return tuple(item for item in items if item)[: config.MAX_ITEMS_PER_LIST]
 
 
 def spoken_duration(seconds: float) -> str:
@@ -50,9 +58,14 @@ class HeadlineAgent:
             model=config.MODEL,
             timeout_seconds=config.TIMEOUT_SECONDS,
             max_budget_usd=config.MAX_BUDGET_USD,
+            json_schema=config.OUTPUT_SCHEMA,
         )
         result = self._model.run(request)
-        text = truncate(to_speech(result.text), config.MAX_HEADLINE_CHARS)
+        answer = result.structured if isinstance(result.structured, dict) else {"headline": result.text}
+        text = truncate(to_speech(str(answer.get("headline") or "")), config.MAX_HEADLINE_CHARS)
         if not text:
             raise HeadlessModelError("model returned an empty headline")
-        return Headline(text=text, cost_usd=result.cost_usd, duration_ms=result.duration_ms)
+        return Headline(
+            text=text, cost_usd=result.cost_usd, duration_ms=result.duration_ms,
+            questions=_clean_items(answer.get("questions")), suggestions=_clean_items(answer.get("suggestions")),
+        )

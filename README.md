@@ -16,6 +16,9 @@ by the session's call sign:
 - **A popup you can read.** Each echo also appears as a small card in the top-right corner while it
   is spoken (and still appears when speech is muted). Its corner shows how the KB figured in:
   used (with the number of notes), nothing relevant, needs login, unavailable, or off.
+- **Questions and suggestions on screen.** When the agent asks you something or suggests next steps,
+  the voice says so ("…two questions for you on screen") and the card lists them as bullets. Those
+  cards stay up until you close them, reply to that session, or it ends.
 - **One speech queue.** Echoes, replays and anything sent to `POST /api/speak` play one at a time,
   so voices never overlap. Other tools should speak through that endpoint.
 - **A tiny menu bar app** (same framework as the to-do app) that shows live sessions and recent

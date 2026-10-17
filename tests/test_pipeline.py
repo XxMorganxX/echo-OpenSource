@@ -12,14 +12,15 @@ from echo_os.sessions import SessionRegistry
 
 
 class FakeHeadline:
-    def __init__(self, text="Billing refactor done.", error=None):
+    def __init__(self, text="Billing refactor done.", error=None, questions=(), suggestions=()):
         self.text, self.error, self.calls = text, error, []
+        self.questions, self.suggestions = tuple(questions), tuple(suggestions)
 
     def write(self, digest, *, project, kb_context=None):
         self.calls.append({"digest": digest, "project": project, "kb_context": kb_context})
         if self.error:
             raise self.error
-        return Headline(self.text, 0.002, 1500)
+        return Headline(self.text, 0.002, 1500, questions=self.questions, suggestions=self.suggestions)
 
 
 class FakeKb:
@@ -35,9 +36,13 @@ class FakeKb:
 class FakeAnnouncer:
     def __init__(self):
         self.announced = []
+        self.resolved = []
 
     def announce(self, announcement):
         self.announced.append(announcement)
+
+    def resolve(self, session_id):
+        self.resolved.append(session_id)
 
     @property
     def said(self):
@@ -240,3 +245,43 @@ def test_kb_lookups_feed_the_auth_light(make_pipeline, write_transcript):
     pipeline.kb_monitor = Monitor()
     pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
     assert observed == ["needs-auth"]
+
+
+def test_questions_and_suggestions_reach_history_and_the_popup(make_pipeline, write_transcript):
+    headline = FakeHeadline("Done, with a question for you on screen.", questions=["Push to main?"],
+                            suggestions=["Add a test set"])
+    pipeline, parts = make_pipeline(headline=headline)
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    stored = parts["history"].recent(1)[0]
+    assert (stored["questions"], stored["suggestions"]) == (["Push to main?"], ["Add a test set"])
+    announcement = parts["announcer"].announced[-1]
+    assert (announcement.questions, announcement.suggestions) == (("Push to main?",), ("Add a test set",))
+    assert announcement.spoken_text == "Alpha. Done, with a question for you on screen."
+    pipeline.replay(echo.id)
+    assert parts["announcer"].announced[-1].questions == ("Push to main?",)
+
+
+def test_announcements_carry_their_session_so_popups_can_be_resolved(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.process(stop_job(long_turn(write_transcript), session_id="s9"), now=T0.timestamp() + 410)
+    assert parts["announcer"].announced[-1].session_id == "s9"
+
+
+def test_your_next_message_to_a_session_resolves_its_popups(make_pipeline):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("UserPromptSubmit", session_id="s1"), entrypoint="cli", pid=None, now=5)
+    assert parts["announcer"].resolved == ["s1"]
+
+
+def test_a_session_ending_resolves_its_popups(make_pipeline):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart", session_id="s1"), entrypoint="cli", pid=None, now=1)
+    pipeline.handle_hook(hook("SessionEnd", session_id="s1"), entrypoint="cli", pid=None, now=5)
+    assert parts["announcer"].resolved == ["s1"]
+
+
+def test_other_events_do_not_resolve_popups(make_pipeline):
+    pipeline, parts = make_pipeline()
+    for event in ("SessionStart", "Stop"):
+        pipeline.handle_hook(hook(event, session_id="s1", transcript_path="/t"), entrypoint="cli", pid=None, now=5)
+    assert parts["announcer"].resolved == []

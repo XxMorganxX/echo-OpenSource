@@ -70,7 +70,9 @@ def main() -> None:
                       "kb_error": kb.error, "kb_cost_usd": kb.cost_usd, "kb_ms": kb.duration_ms}, indent=2))
     if args.command == "headline":
         headline = HeadlineAgent(model).write(digest, project=project, kb_context=kb.context)
-        print(json.dumps({"headline": headline.text, "cost_usd": headline.cost_usd, "ms": headline.duration_ms}, indent=2))
+        print(json.dumps({"headline": headline.text, "questions": headline.questions,
+                          "suggestions": headline.suggestions, "cost_usd": headline.cost_usd,
+                          "ms": headline.duration_ms}, indent=2))
 
 
 if __name__ == "__main__":

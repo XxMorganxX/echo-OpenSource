@@ -74,6 +74,15 @@ function renderEchoes(echoes) {
     }
     const text = node("div", echo.error ? "echo-text error" : "echo-text", echo.headline || `Failed: ${echo.error}`);
     item.append(meta, text);
+    for (const [heading, entries] of [["Questions for you", echo.questions], ["Suggestions", echo.suggestions]]) {
+      if (!entries || !entries.length) continue;
+      const section = node("div", "echo-items");
+      section.append(node("div", "echo-items-heading", heading));
+      const list = node("ul", "");
+      for (const entry of entries) list.append(node("li", "", entry));
+      section.append(list);
+      item.append(section);
+    }
     if (echo.spoken_text) {
       const replay = node("button", "replay", "▶");
       replay.type = "button";

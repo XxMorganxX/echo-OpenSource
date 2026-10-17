@@ -28,11 +28,19 @@ class Announcement:
     body: str  # headline
     # How the KB figured in this echo; None for messages that aren't echoes (e.g. /api/speak).
     kb_usage: KbUsage | None = None
+    # Shown as bullets on the popup, never spoken; the headline points to them.
+    questions: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
+    # The Claude Code session this echo came from; its popups close when you reply to it or it ends.
+    session_id: str = ""
 
 
 class Popup(Protocol):
-    def show(self, *, title: str, subtitle: str, body: str, kb_usage: KbUsage | None) -> None:
-        """Displays the popup and returns at once (it dismisses itself)."""
+    def show(self, announcement: "Announcement") -> None:
+        """Displays the popup and returns at once."""
+
+    def resolve(self, session_id: str) -> None:
+        """Closes the session's popups that wait for an answer (you replied, or the session ended)."""
 
 
 class Announcer(QueueThread):
@@ -43,11 +51,18 @@ class Announcer(QueueThread):
     def announce(self, announcement: Announcement) -> None:
         self._put(announcement)
 
+    def resolve(self, session_id: str) -> None:
+        """Immediate, not queued: an answered question should disappear now, not after queued speech."""
+        if self._popup is not None:
+            try:
+                self._popup.resolve(session_id)
+            except Exception:
+                logger.exception("Popup resolve failed")
+
     def _handle(self, announcement: Announcement) -> None:
         if self._popup is not None:
             try:
-                self._popup.show(title=announcement.title, subtitle=announcement.subtitle, body=announcement.body,
-                                 kb_usage=announcement.kb_usage)
+                self._popup.show(announcement)
             except Exception:
                 logger.exception("Popup failed")
         if self._preferences.muted:

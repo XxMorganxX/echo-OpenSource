@@ -8,14 +8,14 @@ from echo_os.transcript import TurnDigest
 
 
 class FakeModel:
-    def __init__(self, text="Done.", error=None):
-        self.text, self.error, self.requests = text, error, []
+    def __init__(self, text="Done.", error=None, structured=None):
+        self.text, self.error, self.structured, self.requests = text, error, structured, []
 
     def run(self, request):
         self.requests.append(request)
         if self.error:
             raise self.error
-        return ModelResult(text=self.text, structured=None, cost_usd=0.002, duration_ms=1500)
+        return ModelResult(text=self.text, structured=self.structured, cost_usd=0.002, duration_ms=1500)
 
 
 DIGEST = TurnDigest(ask="Refactor billing", response="All 42 tests pass.", tool_calls=12, duration_seconds=400)
@@ -80,3 +80,38 @@ def test_result_reports_cost_and_latency():
                                             (3600, "1 hour"), (3900, "1 hour 5 minutes")])
 def test_spoken_duration(seconds, spoken):
     assert spoken_duration(seconds) == spoken
+
+
+def test_request_asks_for_structured_output():
+    model = FakeModel()
+    HeadlineAgent(model).write(DIGEST, project="p")
+    assert model.requests[0].json_schema == config.OUTPUT_SCHEMA
+
+
+def test_questions_and_suggestions_come_back_as_clean_bullets():
+    structured = {"headline": "Done, with two questions for you on screen.",
+                  "questions": ["Should I **push** to `main`?", "  Which voice do you want?  "],
+                  "suggestions": ["- Add a test set of 15 turns"]}
+    result = HeadlineAgent(FakeModel(structured=structured)).write(DIGEST, project="p")
+    assert result.text == "Done, with two questions for you on screen."
+    assert result.questions == ("Should I push to main?", "Which voice do you want?")
+    assert result.suggestions == ("Add a test set of 15 turns",)
+
+
+def test_item_lists_are_capped_and_blank_items_dropped(monkeypatch):
+    monkeypatch.setattr(config, "MAX_ITEMS_PER_LIST", 2)
+    monkeypatch.setattr(config, "MAX_ITEM_CHARS", 20)
+    structured = {"headline": "Done.", "questions": ["", "one", "two", "three"], "suggestions": ["word " * 20]}
+    result = HeadlineAgent(FakeModel(structured=structured)).write(DIGEST, project="p")
+    assert result.questions == ("one", "two")
+    assert len(result.suggestions[0]) <= 20
+
+
+def test_without_structured_output_the_text_is_the_headline():
+    result = HeadlineAgent(FakeModel(text="Done.", structured=None)).write(DIGEST, project="p")
+    assert (result.text, result.questions, result.suggestions) == ("Done.", (), ())
+
+
+def test_empty_structured_headline_is_an_error():
+    with pytest.raises(HeadlessModelError):
+        HeadlineAgent(FakeModel(structured={"headline": " ", "questions": [], "suggestions": []})).write(DIGEST, project="p")
