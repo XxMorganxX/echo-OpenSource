@@ -12,6 +12,8 @@ from typing import Callable
 
 from AppKit import (
     NSBackingStoreBuffered,
+    NSImage,
+    NSImageView,
     NSBezierPath,
     NSColor,
     NSFont,
@@ -35,6 +37,8 @@ logger = logging.getLogger(__name__)
 PADDING_X = 14
 PADDING_Y = 11
 LINE_GAP = 4
+KB_ICON_SIZE = 14
+KB_ICON_GAP = 6
 CORNER_RADIUS = 12
 FADE_SECONDS = 0.25
 
@@ -43,6 +47,13 @@ BACKGROUND = NSColor.colorWithSRGBRed_green_blue_alpha_(22 / 255, 27 / 255, 34 /
 BORDER = NSColor.colorWithWhite_alpha_(1.0, 0.26)
 TEXT = NSColor.colorWithSRGBRed_green_blue_alpha_(240 / 255, 246 / 255, 252 / 255, 1.0)
 MUTED = NSColor.colorWithSRGBRed_green_blue_alpha_(139 / 255, 148 / 255, 158 / 255, 1.0)
+ACCENT = NSColor.colorWithSRGBRed_green_blue_alpha_(88 / 255, 166 / 255, 255 / 255, 1.0)
+
+# Book icon: filled accent when the knowledge base informed the headline, dim outline when it didn't.
+KB_ICONS = {
+    True: ("book.fill", ACCENT, "Informed by your knowledge base"),
+    False: ("book", MUTED.colorWithAlphaComponent_(0.6), "Knowledge base not used"),
+}
 
 
 def display_seconds(body: str) -> float:
@@ -92,12 +103,22 @@ def _label(text: str, font, color, width: float):
     return field
 
 
-def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None):
+def _kb_icon(kb_informed: bool):
+    symbol, color, description = KB_ICONS[kb_informed]
+    view = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, KB_ICON_SIZE, KB_ICON_SIZE))
+    view.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, description))
+    view.setContentTintColor_(color)
+    view.setToolTip_(description)
+    return view
+
+
+def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | None, kb_informed: bool | None = None):
     """The card view, sized to its text. Separate from the window so it can be rendered offscreen."""
     width = settings.POPUP_WIDTH
     text_width = width - 2 * PADDING_X
+    heading_width = text_width - (KB_ICON_SIZE + KB_ICON_GAP if kb_informed is not None else 0)
     heading = f"{title}  ·  {subtitle}" if subtitle else title
-    heading_label = _label(heading, NSFont.boldSystemFontOfSize_(12), TEXT, text_width)
+    heading_label = _label(heading, NSFont.boldSystemFontOfSize_(12), TEXT, heading_width)
     if subtitle:
         # Call sign in white, project muted.
         from AppKit import NSAttributedString, NSFontAttributeName, NSForegroundColorAttributeName, NSMutableAttributedString
@@ -115,6 +136,12 @@ def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | Non
     heading_label.setFrameOrigin_((PADDING_X, PADDING_Y + body_label.frame().size.height + LINE_GAP))
     card.addSubview_(heading_label)
     card.addSubview_(body_label)
+    if kb_informed is not None:
+        icon = _kb_icon(kb_informed)
+        heading_frame = heading_label.frame()
+        icon.setFrameOrigin_((width - PADDING_X - KB_ICON_SIZE,
+                              heading_frame.origin.y + heading_frame.size.height - KB_ICON_SIZE - 1))
+        card.addSubview_(icon)
     return card
 
 
@@ -125,10 +152,10 @@ class PopupPresenter:
         self._on_click = on_click
         self._windows: list = []
 
-    def show(self, *, title: str, subtitle: str, body: str) -> None:
-        AppHelper.callAfter(self._show_on_main, title, subtitle, body)
+    def show(self, *, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
+        AppHelper.callAfter(self._show_on_main, title, subtitle, body, kb_informed)
 
-    def _show_on_main(self, title: str, subtitle: str, body: str) -> None:
+    def _show_on_main(self, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
         logger.info("Popup show: %s (%d on screen)", title, len(self._windows))
         holder: dict = {}
 
@@ -137,7 +164,7 @@ class PopupPresenter:
             if self._on_click is not None:
                 self._on_click()
 
-        card = build_card(title=title, subtitle=subtitle, body=body, on_click=clicked)
+        card = build_card(title=title, subtitle=subtitle, body=body, on_click=clicked, kb_informed=kb_informed)
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             card.frame(), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False
         )

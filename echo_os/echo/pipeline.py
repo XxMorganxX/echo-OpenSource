@@ -168,7 +168,8 @@ class EchoPipeline:
             echo.spoken_text = self._spoken_template.format(call_sign=echo.call_sign, headline=headline.text)
             self.registry.set_last_headline(session.session_id, headline.text, now=now)
             self._announcer.announce(Announcement(
-                spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline
+                spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline,
+                kb_informed=bool(echo.kb and echo.kb["relevant"]),
             ))
 
         echo.total_ms = int((time.monotonic() - started) * 1000)
@@ -184,6 +185,7 @@ class EchoPipeline:
         self._announcer.announce(Announcement(
             spoken_text=record["spoken_text"], title=record.get("call_sign", ""),
             subtitle=record.get("project", ""), body=record.get("headline", ""),
+            kb_informed=bool(record.get("kb") and record["kb"].get("relevant")),
         ))
         return True
 

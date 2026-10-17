@@ -16,3 +16,19 @@ def test_card_grows_with_its_text():
     long = build_card(title="Alpha", subtitle="p", body="word " * 60, on_click=None)
     assert short.frame().size.width == long.frame().size.width == settings.POPUP_WIDTH
     assert long.frame().size.height > short.frame().size.height
+
+
+def _kb_icons(card):
+    from AppKit import NSImageView
+    return [view for view in card.subviews() if isinstance(view, NSImageView)]
+
+
+def test_card_shows_a_kb_icon_with_an_accessible_label():
+    used = _kb_icons(build_card(title="A", subtitle="p", body="Done.", on_click=None, kb_informed=True))
+    unused = _kb_icons(build_card(title="A", subtitle="p", body="Done.", on_click=None, kb_informed=False))
+    assert used[0].toolTip() == "Informed by your knowledge base"
+    assert unused[0].toolTip() == "Knowledge base not used"
+
+
+def test_messages_without_kb_information_have_no_icon():
+    assert _kb_icons(build_card(title="CI", subtitle="", body="Deploy finished.", on_click=None, kb_informed=None)) == []

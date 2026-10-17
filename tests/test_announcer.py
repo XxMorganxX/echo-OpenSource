@@ -27,7 +27,7 @@ class RecordingPopup:
     def __init__(self, events):
         self.events = events
 
-    def show(self, *, title, subtitle, body):
+    def show(self, *, title, subtitle, body, kb_informed=None):
         self.events.append(("popup", title))
 
 
@@ -78,3 +78,17 @@ def test_announcer_works_without_a_popup(tmp_path):
     announcer.start()
     announcer.stop()
     assert voice.events == [("speak", "Alpha. done")]
+
+
+def test_popup_receives_the_kb_indicator(tmp_path):
+    received = []
+
+    class Popup:
+        def show(self, *, title, subtitle, body, kb_informed):
+            received.append(kb_informed)
+
+    announcer = Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=Popup())
+    announcer.announce(Announcement(spoken_text="x", title="A", subtitle="p", body="x", kb_informed=True))
+    announcer.start()
+    announcer.stop()
+    assert received == [True]

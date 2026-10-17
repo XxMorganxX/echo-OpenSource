@@ -25,10 +25,12 @@ class Announcement:
     title: str  # call sign, or the caller's name for /api/speak
     subtitle: str  # project
     body: str  # headline
+    # True: the KB informed the headline. False: it didn't. None: not an echo (e.g. /api/speak).
+    kb_informed: bool | None = None
 
 
 class Popup(Protocol):
-    def show(self, *, title: str, subtitle: str, body: str) -> None:
+    def show(self, *, title: str, subtitle: str, body: str, kb_informed: bool | None) -> None:
         """Displays the popup and returns at once (it dismisses itself)."""
 
 
@@ -43,7 +45,8 @@ class Announcer(QueueThread):
     def _handle(self, announcement: Announcement) -> None:
         if self._popup is not None:
             try:
-                self._popup.show(title=announcement.title, subtitle=announcement.subtitle, body=announcement.body)
+                self._popup.show(title=announcement.title, subtitle=announcement.subtitle, body=announcement.body,
+                                 kb_informed=announcement.kb_informed)
             except Exception:
                 logger.exception("Popup failed")
         if self._preferences.muted:

@@ -196,3 +196,24 @@ def test_replay_speaks_a_stored_echo_again(make_pipeline, write_transcript):
     assert pipeline.replay(echo.id) is True
     assert parts["announcer"].said == ["Alpha. Billing refactor done."] * 2
     assert pipeline.replay("nope") is False
+
+
+def test_announcement_says_whether_the_kb_informed_it(make_pipeline, write_transcript):
+    used = FakeKb(KbLookup(KbContext("Billing ships Friday.", ["Roadmap"])))
+    pipeline, parts = make_pipeline(kb=used)
+    pipeline.process(stop_job(long_turn(write_transcript, "a.jsonl")), now=T0.timestamp() + 410)
+    assert parts["announcer"].announced[-1].kb_informed is True
+
+
+def test_kb_not_relevant_or_failed_is_marked_not_informed(make_pipeline, write_transcript):
+    for lookup in (KbLookup(None), KbLookup(None, error="notes-kb needs-auth")):
+        pipeline, parts = make_pipeline(kb=FakeKb(lookup))
+        pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+        assert parts["announcer"].announced[-1].kb_informed is False
+
+
+def test_replay_keeps_the_kb_indicator(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(kb=FakeKb(KbLookup(KbContext("ctx", []))))
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    pipeline.replay(echo.id)
+    assert parts["announcer"].announced[-1].kb_informed is True
