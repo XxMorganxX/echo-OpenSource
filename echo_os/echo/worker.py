@@ -1,7 +1,7 @@
-"""Background threads: the single echo worker, the speech queue, and the session sweeper.
+"""Background threads: the single echo worker and the session sweeper.
 
-One worker means one headline at a time for the whole machine. Speech has its own queue so a
-long utterance never delays the next summary, and two echoes never talk over each other.
+One worker means one set of model calls at a time for the whole machine. Speech has its own
+queue (`announcer.py`) so a long utterance never delays the next summary.
 """
 
 from __future__ import annotations
@@ -12,14 +12,14 @@ import threading
 import time
 from typing import Callable
 
-from echo_os.voice import VoiceError, VoiceOutput
-
 logger = logging.getLogger(__name__)
 
 _STOP = object()
 
 
-class _QueueThread:
+class QueueThread:
+    """One daemon thread draining one queue, in order. Subclasses implement `_handle`."""
+
     def __init__(self, name: str):
         self._queue: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
@@ -45,7 +45,7 @@ class _QueueThread:
         raise NotImplementedError
 
 
-class EchoWorker(_QueueThread):
+class EchoWorker(QueueThread):
     def __init__(self, process: Callable, *, settle_seconds: float, sleep: Callable[[float], None] = time.sleep):
         super().__init__("echo-worker")
         self._process, self._settle_seconds, self._sleep = process, settle_seconds, sleep
@@ -57,21 +57,6 @@ class EchoWorker(_QueueThread):
         # Give Claude Code a moment to flush the transcript's final lines.
         self._sleep(max(0.0, job.queued_at + self._settle_seconds - time.time()))
         self._process(job)
-
-
-class QueuedSpeaker(_QueueThread):
-    def __init__(self, voice: VoiceOutput):
-        super().__init__("echo-speaker")
-        self._voice = voice
-
-    def say(self, text: str) -> None:
-        self._put(text)
-
-    def _handle(self, text: str) -> None:
-        try:
-            self._voice.speak(text)
-        except VoiceError as exc:
-            logger.error("Speech failed: %s", exc)
 
 
 class PeriodicTask:

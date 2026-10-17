@@ -4,7 +4,7 @@ import urllib.error
 import urllib.request
 
 import pytest
-from test_pipeline import FakeHeadline, FakeKb, FakeSpeaker
+from test_pipeline import FakeAnnouncer, FakeHeadline, FakeKb
 
 from echo_os.app import EchoApp
 from echo_os.echo.history import EchoHistory
@@ -26,16 +26,16 @@ class FakeWorker:
 def running(tmp_path):
     prompt = tmp_path / "system_prompt.md"
     prompt.write_text("Original prompt")
-    speaker = FakeSpeaker()
+    speaker = FakeAnnouncer()
     pipeline = EchoPipeline(
         registry=SessionRegistry(tmp_path / "s.json", call_signs=["Alpha", "Bravo"]),
-        headline_agent=FakeHeadline(), kb_agent=FakeKb(), speaker=speaker,
+        headline_agent=FakeHeadline(), kb_agent=FakeKb(), announcer=speaker,
         history=EchoHistory(tmp_path / "e.jsonl"), preferences=Preferences(tmp_path / "p.json"),
         kb_enabled=True, min_turn_seconds=180, min_tool_calls=5, max_job_age_seconds=600,
         tracked_entrypoints={"cli"}, spoken_template="{call_sign}. {headline}",
     )
     worker = FakeWorker()
-    app = EchoApp(pipeline=pipeline, worker=worker, prompt_path=prompt, recent_limit=10,
+    app = EchoApp(pipeline=pipeline, worker=worker, announcer=speaker, prompt_path=prompt, recent_limit=10,
                   thresholds={"min_turn_seconds": 180, "min_tool_calls": 5}, voice_provider="macos-say")
     server = create_server(app, host="127.0.0.1", port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -131,3 +131,15 @@ def test_index_is_served(running):
     base, *_ = running
     status, body = call("GET", f"{base}/")
     assert status == 200 and b"echo" in body.lower()
+
+
+def test_speak_queues_through_the_app(running):
+    base, app, worker, speaker, prompt = running
+    assert call("POST", f"{base}/api/speak", {"text": "Build finished.", "title": "CI"})[0] == 202
+    announcement = speaker.announced[0]
+    assert (announcement.spoken_text, announcement.title, announcement.body) == ("Build finished.", "CI", "Build finished.")
+
+
+def test_speak_requires_text(running):
+    base, *_ = running
+    assert call("POST", f"{base}/api/speak", {"text": "  "})[0] == 400

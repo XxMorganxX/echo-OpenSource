@@ -2,8 +2,7 @@ import threading
 import time
 
 from echo_os.echo.pipeline import EchoJob
-from echo_os.echo.worker import EchoWorker, QueuedSpeaker
-from echo_os.voice import VoiceError
+from echo_os.echo.worker import EchoWorker
 
 
 def test_worker_processes_jobs_in_order_and_survives_errors():
@@ -31,23 +30,3 @@ def test_worker_waits_out_the_settle_delay():
     worker = EchoWorker(lambda job: None, settle_seconds=1.5, sleep=slept.append)
     worker._handle(EchoJob("a", "/t", ended_at=0, queued_at=time.time()))
     assert 1.0 < slept[0] <= 1.5
-
-
-def test_speaker_speaks_in_order_and_survives_voice_errors():
-    spoken, done = [], threading.Event()
-
-    class Voice:
-        def speak(self, text):
-            spoken.append(text)
-            if text == "bad":
-                raise VoiceError("x")
-            if len(spoken) == 3:
-                done.set()
-
-    speaker = QueuedSpeaker(Voice())
-    speaker.start()
-    for text in ("one", "bad", "three"):
-        speaker.say(text)
-    assert done.wait(2)
-    speaker.stop()
-    assert spoken == ["one", "bad", "three"]

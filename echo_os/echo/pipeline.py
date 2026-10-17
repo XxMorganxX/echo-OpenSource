@@ -18,6 +18,7 @@ from echo_os.agents.headline.agent import HeadlineAgent
 from echo_os.agents.kb_relevance.agent import KbLookup, KbRelevanceAgent
 from echo_os.agents.shared.headless_model import HeadlessModelError
 from echo_os.agents.shared.text import truncate
+from echo_os.echo.announcer import Announcement
 from echo_os.echo.history import EchoHistory
 from echo_os.echo.preferences import Preferences
 from echo_os.sessions import SessionRegistry
@@ -28,8 +29,8 @@ logger = logging.getLogger(__name__)
 STORED_ASK_CHARS = 300
 
 
-class Speaker(Protocol):
-    def say(self, text: str) -> None: ...
+class AnnouncementQueue(Protocol):
+    def announce(self, announcement: Announcement) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,7 @@ class EchoPipeline:
         registry: SessionRegistry,
         headline_agent: HeadlineAgent,
         kb_agent: KbRelevanceAgent,
-        speaker: Speaker,
+        announcer: AnnouncementQueue,
         history: EchoHistory,
         preferences: Preferences,
         kb_enabled: bool,
@@ -82,7 +83,7 @@ class EchoPipeline:
         self.preferences = preferences
         self._headline_agent = headline_agent
         self._kb_agent = kb_agent
-        self._speaker = speaker
+        self._announcer = announcer
         self._kb_enabled = kb_enabled
         self._min_turn_seconds = min_turn_seconds
         self._min_tool_calls = min_tool_calls
@@ -166,8 +167,9 @@ class EchoPipeline:
             echo.headline_cost_usd, echo.headline_ms = headline.cost_usd, headline.duration_ms
             echo.spoken_text = self._spoken_template.format(call_sign=echo.call_sign, headline=headline.text)
             self.registry.set_last_headline(session.session_id, headline.text, now=now)
-            if not self.preferences.muted:
-                self._speaker.say(echo.spoken_text)
+            self._announcer.announce(Announcement(
+                spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline
+            ))
 
         echo.total_ms = int((time.monotonic() - started) * 1000)
         self.history.append(asdict(echo))
@@ -179,7 +181,10 @@ class EchoPipeline:
         record = self.history.get(echo_id)
         if not record or not record.get("spoken_text"):
             return False
-        self._speaker.say(record["spoken_text"])
+        self._announcer.announce(Announcement(
+            spoken_text=record["spoken_text"], title=record.get("call_sign", ""),
+            subtitle=record.get("project", ""), body=record.get("headline", ""),
+        ))
         return True
 
     def kb_status(self) -> dict:

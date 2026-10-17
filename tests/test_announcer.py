@@ -1,0 +1,80 @@
+import threading
+
+from echo_os.echo.announcer import Announcement, Announcer
+from echo_os.echo.preferences import Preferences
+from echo_os.voice import VoiceError
+
+
+class RecordingVoice:
+    def __init__(self, fail_on=None):
+        self.events, self.fail_on = [], fail_on
+        self.active = 0
+        self.max_active = 0
+        self.lock = threading.Lock()
+
+    def speak(self, text):
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        self.events.append(("speak", text))
+        with self.lock:
+            self.active -= 1
+        if text == self.fail_on:
+            raise VoiceError("x")
+
+
+class RecordingPopup:
+    def __init__(self, events):
+        self.events = events
+
+    def show(self, *, title, subtitle, body):
+        self.events.append(("popup", title))
+
+
+def make(tmp_path, **voice_kwargs):
+    voice = RecordingVoice(**voice_kwargs)
+    prefs = Preferences(tmp_path / "p.json")
+    announcer = Announcer(voice=voice, preferences=prefs, popup=RecordingPopup(voice.events))
+    return announcer, voice, prefs
+
+
+def item(name):
+    return Announcement(spoken_text=f"{name}. done", title=name, subtitle="proj", body="done")
+
+
+def test_each_popup_appears_as_its_speech_starts_one_at_a_time(tmp_path):
+    announcer, voice, _ = make(tmp_path)
+    for name in ("Alpha", "Bravo", "Charlie"):
+        announcer.announce(item(name))
+    announcer.start()
+    announcer.stop()
+    assert voice.events == [("popup", "Alpha"), ("speak", "Alpha. done"), ("popup", "Bravo"), ("speak", "Bravo. done"),
+                            ("popup", "Charlie"), ("speak", "Charlie. done")]
+    assert voice.max_active == 1
+
+
+def test_mute_is_checked_at_play_time_and_popups_still_show(tmp_path):
+    announcer, voice, prefs = make(tmp_path)
+    announcer.announce(item("Alpha"))
+    prefs.set_muted(True)  # muted after queueing, before playing
+    announcer.start()
+    announcer.stop()
+    assert voice.events == [("popup", "Alpha")]
+
+
+def test_voice_errors_do_not_stop_the_queue(tmp_path):
+    announcer, voice, _ = make(tmp_path, fail_on="Alpha. done")
+    announcer.announce(item("Alpha"))
+    announcer.announce(item("Bravo"))
+    announcer.start()
+    announcer.stop()
+    assert ("speak", "Bravo. done") in voice.events
+
+
+def test_announcer_works_without_a_popup(tmp_path):
+    voice = RecordingVoice()
+    announcer = Announcer(voice=voice, preferences=Preferences(tmp_path / "p.json"), popup=None)
+    announcer.announce(item("Alpha"))
+    announcer.start()
+    announcer.stop()
+    assert voice.events == [("speak", "Alpha. done")]

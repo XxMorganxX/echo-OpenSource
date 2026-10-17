@@ -24,8 +24,8 @@ Claude Code session (any)                     echo-OS daemon (one launchd agent)
                                              │    transcript → TurnDigest → long-horizon gate
                                              │    → KB relevance agent (notes-kb, optional)
                                              │    → headline agent → history
-                                             ├─ Speaker (own queue so speech never overlaps)
-                                             └─ menu bar status item + WKWebView panel
+                                             ├─ Announcer (one queue: popup + speech, one at a time)
+                                             └─ menu bar status item + WKWebView panel + popups
 ```
 
 Same framework as the to-do app (`an existing menu bar app`): Python 3.13, PyObjC menu bar app with a
@@ -46,7 +46,7 @@ summaries could bleed between sessions, and it needs reset logic, all to save ~1
 |---|---|---|
 | D1 | Hooks forward raw JSON to the daemon over HTTP with `curl -m 1`; failures are swallowed. | A hook must never slow or break a user's session. If the daemon is down, echoes are simply missed. |
 | D2 | Long-horizon gate: turn wall-clock ≥ `MIN_TURN_SECONDS` (180) **and** tool calls ≥ `MIN_TOOL_CALLS` (5). | Duration is what "I walked away" means; the tool floor screens out long thinking-only answers. Both in `settings.py`. |
-| D3 | Turn boundaries come from the transcript: the turn starts at the first human prompt after the previous `turn_duration`/`stop_hook_summary` record. | Survives daemon restarts; `turn_duration` itself is written *after* the Stop hook, so it can't be used for the current turn. |
+| D3 | Turn boundaries come from the transcript: the turn starts at the first human prompt after the previous `turn_duration`/`stop_hook_summary` record. Markers after the turn's last message are ignored, and messages typed mid-turn (`queued_command` attachments) join the ask. | Survives daemon restarts. Claude Code writes the current turn's own markers moments after the Stop hook, so they are usually present by the time the transcript is read and must not be taken as a turn boundary. |
 | D4 | Headless calls run `claude -p` with `--system-prompt`, `--tools ""`, `--strict-mcp-config`, `disableAllHooks`, `--no-session-persistence`, and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`. | Measured: the default context is 163k tokens ($0.16/call); stripped it is ~640 tokens ($0.001, ~3 s). Disabling hooks stops recursion and stops the user's own Stop hooks (notification sound) firing for background calls. |
 | D5 | Call signs: NATO alphabet (Alpha, Bravo, Charlie…), lowest free name; freed when the session ends or its `CLAUDE_PID` dies; a resumed session gets its old name back if free. Overflow → "Alpha 2". | Short, unambiguous when spoken. List lives in `settings.py`. "Alpha"/"Juliet" spellings because TTS reads them better than "Alfa"/"Juliett". |
 | D6 | Only interactive sessions are tracked: `CLAUDE_CODE_ENTRYPOINT` (passed by the hook) in `cli`/`claude-desktop`. `sdk-cli` (headless `claude -p`, including echo-OS's own) is ignored. | Automation runs would otherwise claim call signs and chatter. |
@@ -54,6 +54,8 @@ summaries could bleed between sessions, and it needs reset logic, all to save ~1
 | D8 | The KB relevance agent is a separate headless call with only `search_memories` and `find_entity` from notes-kb, structured JSON output, a budget cap, and a timeout. It fails open: any error → no KB context. | Keeps the headline path alive when notes-kb is down or unauthenticated. The agent decides relevance itself and is told to skip tools for generic turns. |
 | D9 | Voice behind a `VoiceOutput` contract. Default `macos-say` (no setup); `openai` (gpt-4o-mini-tts → `afplay`) when selected and `OPENAI_API_KEY` is set. | TTS is the most likely provider to change. `say` works on day one. |
 | D10 | Model behind a `HeadlessModel` contract; v1 implementation is Claude Code headless with `claude-haiku-5-5`. | The user asked for a background Claude Code session; the contract leaves room for a direct API call later. |
+| D12 | Every voice message goes through one `Announcer` queue in the app: echoes, replays, `POST /api/speak` and `./echoctl say`. Mute is checked at play time. | Nothing ever talks over anything else, and other bots can join the same queue instead of calling a voice directly. |
+| D13 | Each announcement shows a top-right popup card (native `NSPanel`, panel colors) at the moment its speech starts; cards stack, stay up for reading time (6–20 s) and open the panel on click. Popups still show when muted. | Lets you read what was said; muting turns echoes into read-only. A native window avoids Notification Center grouping and Focus modes. |
 | D11 | History is an append-only JSONL (`state/echoes.jsonl`) holding every echo with its inputs, KB decision, cost and latency. Skipped turns are logged, not stored. | Doubles as the agents' logging layer and the panel's feed. |
 
 ## Hook contract
@@ -73,6 +75,7 @@ fields used: `hook_event_name`, `session_id`, `transcript_path`, `cwd`, `source`
 | GET | `/api/state` | sessions, recent echoes, mute flag, KB status, thresholds |
 | GET/PUT | `/api/prompt` | read / replace the headline system prompt |
 | POST | `/api/mute` | `{"muted": bool}` |
+| POST | `/api/speak` | `{"text": str, "title"?: str}`: queue a voice message (202) |
 | POST | `/api/echoes/<id>/replay` | speak an echo again |
 
 ## Agents

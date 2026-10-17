@@ -70,6 +70,17 @@ KB_AGENT_ENABLED = os.environ.get("ECHO_OS_KB_AGENT", "true").lower() == "true"
 SPOKEN_TEMPLATE = "{call_sign}. {headline}"
 RECENT_ECHOES_LIMIT = 30
 
+# -- Popup (menu bar app only) ----------------------------------------------------------
+# A small card in the top-right corner that shows each announcement while it is spoken.
+POPUP_ENABLED = os.environ.get("ECHO_OS_POPUP", "true").lower() == "true"
+POPUP_WIDTH = 340
+POPUP_MARGIN = 12
+POPUP_GAP = 8
+# On screen for roughly reading time, clamped to these bounds.
+POPUP_READING_WORDS_PER_SECOND = 2.5
+POPUP_MIN_SECONDS = 6
+POPUP_MAX_SECONDS = 20
+
 # -- Voice -----------------------------------------------------------------------------
 VOICE_PROVIDER = os.environ.get("ECHO_OS_VOICE", "macos-say")  # macos-say | openai
 MACOS_SAY_VOICE = os.environ.get("ECHO_OS_SAY_VOICE", "")  # "" = system default voice

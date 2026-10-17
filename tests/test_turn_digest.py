@@ -76,3 +76,31 @@ def test_missing_transcript_returns_none(tmp_path):
 def test_transcript_without_a_human_prompt_returns_none(write_transcript):
     path = write_transcript([assistant_text("hello", 0)])
     assert read_last_turn(path, ended_at=T0.timestamp()) is None
+
+
+def test_the_current_turns_own_end_markers_are_ignored(write_transcript):
+    """Claude Code writes stop_hook_summary/turn_duration for the turn right after the Stop hooks run,
+    so by the time the transcript is read they're already there."""
+    path = write_transcript([
+        human("old", 0), assistant_text("old answer", 5), turn_end(6),
+        human("What is the webhook secret?", 100), tool_use("Read", 101), tool_result(102),
+        assistant_text("It's in Vault.", 112),
+        {"type": "system", "subtype": "stop_hook_summary", "timestamp": "2026-10-16T12:01:52Z"},
+        turn_end(112.3),
+        {"type": "last-prompt"},
+    ])
+    digest = read_last_turn(path, ended_at=T0.timestamp() + 112)
+    assert digest is not None
+    assert digest.ask == "What is the webhook secret?"
+    assert digest.response == "It's in Vault."
+    assert digest.tool_calls == 1
+
+
+def test_messages_sent_mid_turn_are_part_of_the_ask(write_transcript):
+    queued = {"type": "attachment", "isSidechain": False, "timestamp": "2026-10-16T12:00:30Z",
+              "attachment": {"type": "queued_command", "prompt": "Also add a popup", "origin": {"kind": "human"}}}
+    path = write_transcript([human("Measure latency", 0), tool_use("Bash", 10), tool_result(11), queued,
+                             tool_use("Edit", 40), tool_result(41), assistant_text("Done both.", 300)])
+    digest = read_last_turn(path, ended_at=T0.timestamp() + 300)
+    assert digest.ask == "Measure latency\n\nAlso add a popup"
+    assert digest.duration_seconds == 300

@@ -13,7 +13,8 @@ from typing import Protocol
 
 from echo_os import settings
 from echo_os.agents.headline import config as headline_config
-from echo_os.echo.pipeline import EchoJob, EchoPipeline
+from echo_os.echo.announcer import Announcement, Popup
+from echo_os.echo.pipeline import AnnouncementQueue, EchoJob, EchoPipeline
 
 MAX_PROMPT_CHARS = 20_000
 
@@ -26,6 +27,7 @@ class JobSink(Protocol):
 class EchoApp:
     pipeline: EchoPipeline
     worker: JobSink
+    announcer: AnnouncementQueue
     prompt_path: Path
     recent_limit: int
     thresholds: dict
@@ -44,6 +46,13 @@ class EchoApp:
         job = self.pipeline.handle_hook(payload, entrypoint=entrypoint, pid=pid, now=time.time())
         if job is not None:
             self.worker.submit(job)
+
+    def speak(self, text: str, *, title: str) -> None:
+        """Queues a voice message from outside echo-OS behind any echoes already waiting."""
+        text = text.strip()
+        if not text:
+            raise ValueError("Nothing to say.")
+        self.announcer.announce(Announcement(spoken_text=text, title=title, subtitle="", body=text))
 
     def state(self) -> dict:
         return {
@@ -69,14 +78,18 @@ class EchoApp:
         tmp.replace(self.prompt_path)
 
 
-def build_app() -> EchoApp:
-    """The real service, wired from settings. Imports are local so tests never touch providers."""
+def build_app(popup: Popup | None = None) -> EchoApp:
+    """The real service, wired from settings. Imports are local so tests never touch providers.
+
+    `popup` is supplied by the menu bar app; the headless daemon runs without one.
+    """
     from echo_os.agents.headline.agent import HeadlineAgent
     from echo_os.agents.kb_relevance.agent import KbRelevanceAgent
     from echo_os.agents.shared.headless_model import ClaudeCodeHeadless
     from echo_os.echo.history import EchoHistory
     from echo_os.echo.preferences import Preferences
-    from echo_os.echo.worker import EchoWorker, PeriodicTask, QueuedSpeaker
+    from echo_os.echo.announcer import Announcer
+    from echo_os.echo.worker import EchoWorker, PeriodicTask
     from echo_os.sessions import SessionRegistry
     from echo_os.voice import create_voice
 
@@ -84,14 +97,15 @@ def build_app() -> EchoApp:
                                child_env_flag=settings.CHILD_ENV_FLAG)
     registry = SessionRegistry(settings.SESSIONS_PATH, call_signs=settings.CALL_SIGNS,
                                idle_expiry_seconds=settings.SESSION_IDLE_EXPIRY_SECONDS)
-    speaker = QueuedSpeaker(create_voice())
+    preferences = Preferences(settings.PREFERENCES_PATH)
+    announcer = Announcer(voice=create_voice(), preferences=preferences, popup=popup)
     pipeline = EchoPipeline(
         registry=registry,
         headline_agent=HeadlineAgent(model),
         kb_agent=KbRelevanceAgent(model),
-        speaker=speaker,
+        announcer=announcer,
         history=EchoHistory(settings.ECHOES_PATH),
-        preferences=Preferences(settings.PREFERENCES_PATH),
+        preferences=preferences,
         kb_enabled=settings.KB_AGENT_ENABLED,
         min_turn_seconds=settings.MIN_TURN_SECONDS,
         min_tool_calls=settings.MIN_TOOL_CALLS,
@@ -105,9 +119,10 @@ def build_app() -> EchoApp:
     return EchoApp(
         pipeline=pipeline,
         worker=worker,
+        announcer=announcer,
         prompt_path=headline_config.SYSTEM_PROMPT_PATH,
         recent_limit=settings.RECENT_ECHOES_LIMIT,
         thresholds={"min_turn_seconds": settings.MIN_TURN_SECONDS, "min_tool_calls": settings.MIN_TOOL_CALLS},
         voice_provider=settings.VOICE_PROVIDER,
-        background=[speaker, worker, sweeper],
+        background=[announcer, worker, sweeper],
     )

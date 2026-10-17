@@ -72,6 +72,12 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                 body, entrypoint=(query.get("entrypoint") or [""])[0], pid=int(pid_raw) if pid_raw.isdigit() else None
             )
             return self._no_content()
+        if parsed.path == "/api/speak":
+            try:
+                self.server.app.speak(str(body.get("text", "")), title=str(body.get("title") or "Echo"))
+            except ValueError as exc:
+                return self._error(HTTPStatus.BAD_REQUEST, str(exc))
+            return self._json({"queued": True}, HTTPStatus.ACCEPTED)
         if parsed.path == "/api/mute":
             muted = bool(body.get("muted"))
             self.server.app.pipeline.preferences.set_muted(muted)

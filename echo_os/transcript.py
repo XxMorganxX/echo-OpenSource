@@ -46,6 +46,10 @@ def read_last_turn(
         return None
 
     started_at = _timestamp(prompts[0][0])
+    # Messages typed while the turn was running arrive as queued_command attachments.
+    start_index = turn.index(prompts[0][0])
+    prompts += [(entry, text) for entry in turn[start_index:] if (text := _queued_prompt_text(entry)) is not None]
+    prompts.sort(key=lambda pair: turn.index(pair[0]))
     main_line = [entry for entry in turn if not entry.get("isSidechain")]
     response = (last_assistant_message or "").strip() or _final_response(main_line)
     return TurnDigest(
@@ -73,6 +77,12 @@ def _read_entries(path: Path) -> list[dict] | None:
 
 
 def _entries_of_last_turn(entries: list[dict]) -> list[dict]:
+    # The current turn's own end markers are usually written by the time we read (moments after the
+    # Stop hook), so only markers before the turn's last message count as a previous turn's end.
+    last_message = max(
+        (i for i, entry in enumerate(entries) if entry.get("type") in ("user", "assistant")), default=-1
+    )
+    entries = entries[: last_message + 1]
     for index in range(len(entries) - 1, -1, -1):
         entry = entries[index]
         if entry.get("type") == "system" and entry.get("subtype") in TURN_END_SUBTYPES:
@@ -96,6 +106,16 @@ def _human_prompt_text(entry: dict) -> str | None:
     if not text or text.startswith(NON_PROMPT_PREFIXES):
         return None
     return text
+
+
+def _queued_prompt_text(entry: dict) -> str | None:
+    attachment = entry.get("attachment")
+    if entry.get("type") != "attachment" or entry.get("isSidechain") or not isinstance(attachment, dict):
+        return None
+    if attachment.get("type") != "queued_command" or (attachment.get("origin") or {}).get("kind") != "human":
+        return None
+    text = str(attachment.get("prompt") or "").strip()
+    return text or None
 
 
 def _blocks(entry: dict, block_type: str) -> list[dict]:

@@ -13,6 +13,10 @@ by the session's call sign:
   something worth adding, and fetches it.
 - **Editable system prompt.** Change how headlines are written from the panel. Edits apply to the
   next echo.
+- **A popup you can read.** Each echo also appears as a small card in the top-right corner while it
+  is spoken (and still appears when speech is muted).
+- **One speech queue.** Echoes, replays and anything sent to `POST /api/speak` play one at a time,
+  so voices never overlap. Other tools should speak through that endpoint.
 - **A tiny menu bar app** (same framework as the to-do app) that shows live sessions and recent
   echoes, with mute and replay.
 
@@ -32,8 +36,8 @@ Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 python3.13 -m venv venv
 ./venv/bin/pip install -r requirements.txt -e .
 ./echoctl test        # run the test suite
-./echoctl say "Alpha. Voice check."
-./echoctl install     # launchd agent + Claude Code hooks + Daemon Deck manifest
+./echoctl install
+./echoctl say "Alpha. Voice check."   # queued through the running app     # launchd agent + Claude Code hooks + Daemon Deck manifest
 ```
 
 `install` does three things:
@@ -73,6 +77,13 @@ the session transcript and checks the length gate. Then one worker runs the KB r
 the headline agent (each is a stripped-down `claude -p` call on Haiku, about 3 seconds and a fraction
 of a cent). Last, it queues the speech. Headless sessions, including echo-OS's own calls, are
 ignored.
+
+Anything else that wants to talk can join the queue:
+
+```bash
+curl -X POST localhost:8431/api/speak -H 'Content-Type: application/json' \
+  -d '{"text": "Deploy finished.", "title": "CI"}'
+```
 
 `state/` (gitignored) holds call-sign assignments, the echo history (`echoes.jsonl`, which includes
 transcript excerpts) and preferences.

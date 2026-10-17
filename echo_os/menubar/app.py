@@ -1,4 +1,4 @@
-"""Native macOS menu bar app: a status item that toggles a small floating panel.
+"""Native macOS menu bar app: a status item that toggles a small floating panel, plus popups.
 
 Adapted from the to-do app's menu bar wrapper. The app also hosts the echo-OS daemon (server,
 worker, speech), unless one is already answering on the port, in which case it only shows the
@@ -38,6 +38,7 @@ from Foundation import NSDistributedNotificationCenter, NSObject, NSURL, NSURLRe
 from WebKit import WKWebView, WKWebViewConfiguration
 
 from echo_os import settings
+from echo_os.menubar.popup import PopupPresenter
 
 APP_NAME = "Echo"
 STATUS_TITLE = "Echo"
@@ -84,9 +85,10 @@ class FloatingPanel(NSPanel):
 class DaemonRuntime:
     """Starts the embedded echo-OS service unless another instance already serves the port."""
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, popup=None):
         self.base_url = f"http://{host}:{port}"
         self.host, self.port = host, port
+        self.popup = popup
         self.app = None
         self.server = None
 
@@ -97,7 +99,7 @@ class DaemonRuntime:
         from echo_os.app import build_app
         from echo_os.server.server import create_server
 
-        self.app = build_app()
+        self.app = build_app(popup=self.popup)
         self.app.start()
         self.server = create_server(self.app, host=self.host, port=self.port)
         threading.Thread(target=self.server.serve_forever, name="echo-http", daemon=True).start()
@@ -125,7 +127,8 @@ class EchoMenubarApp(NSObject):
         if self is None:
             return None
         self.show_on_launch = show_on_launch
-        self.runtime = DaemonRuntime(settings.SERVER_HOST, settings.SERVER_PORT)
+        popup = PopupPresenter(on_click=lambda: self.showWindow_(None)) if settings.POPUP_ENABLED else None
+        self.runtime = DaemonRuntime(settings.SERVER_HOST, settings.SERVER_PORT, popup=popup)
         self.status_item = None
         self.window = None
         self.webview = None

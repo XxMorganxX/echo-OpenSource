@@ -2,7 +2,7 @@
 
     ./echoctl headline <transcript.jsonl>   # KB agent + headline, printed (not spoken)
     ./echoctl kb <transcript.jsonl>         # KB relevance agent only
-    ./echoctl say "text"                    # voice check
+    ./echoctl say "text"                    # queue a voice message through the running app
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from echo_os import settings
@@ -18,7 +20,6 @@ from echo_os.agents.headline.agent import HeadlineAgent
 from echo_os.agents.kb_relevance.agent import KbRelevanceAgent
 from echo_os.agents.shared.headless_model import ClaudeCodeHeadless
 from echo_os.transcript import is_long_horizon, read_last_turn
-from echo_os.voice import create_voice
 
 
 def _digest(path: str):
@@ -28,6 +29,20 @@ def _digest(path: str):
     long_horizon = is_long_horizon(digest, min_seconds=settings.MIN_TURN_SECONDS, min_tool_calls=settings.MIN_TOOL_CALLS)
     print(f"turn: {digest.duration_seconds:.0f}s, {digest.tool_calls} tool calls, long-horizon={long_horizon}", file=sys.stderr)
     return digest
+
+
+def _queue_speech(text: str) -> None:
+    """Speech always goes through the app's queue, never straight to the voice, so nothing overlaps."""
+    request = urllib.request.Request(
+        f"http://{settings.SERVER_HOST}:{settings.SERVER_PORT}/api/speak",
+        data=json.dumps({"text": text, "title": "echoctl"}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=3).close()
+    except (urllib.error.URLError, ConnectionError) as exc:
+        sys.exit(f"echo-OS isn't running, so nothing was queued ({exc}). Start it with ./echoctl start")
+    print("Queued.")
 
 
 def main() -> None:
@@ -42,7 +57,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "say":
-        create_voice().speak(args.text)
+        _queue_speech(args.text)
         return
 
     model = ClaudeCodeHeadless(binary=settings.CLAUDE_BINARY, workdir=settings.HEADLESS_WORKDIR,
