@@ -8,6 +8,7 @@ If relevant:
 - Call search_memories (or find_entity for a person or company name). At most three tool calls in total.
 - Read the confidence field. Use only "strong" results. Treat "weak", "keyword" and "none" as nothing found.
 - Return one or two plain sentences of context that would help a listener place the task (what the project is for, who it is for, what milestone it belongs to). No speculation.
+- The context is only facts about the subject. Never describe your search, the tools, match quality, or what you chose not to use.
 - If nothing strong was found, answer relevant=false.
 
 sources lists the titles of the notes you used.
