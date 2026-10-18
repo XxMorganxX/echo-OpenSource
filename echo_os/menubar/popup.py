@@ -7,6 +7,9 @@ Two kinds of card:
 - Plain: fades after reading time; clicking it dismisses it and opens the panel.
 - Sticky (has questions or suggestions): stays until you close it with its ✕, reply to that Claude
   session, or the session ends. Clicking it opens the panel and leaves it up.
+
+Dragging any card moves the whole stack; where you drop it is saved in preferences and used for
+every card after (see popup_position.py). Dropping it back near the top-right corner restores the default.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from typing import Callable
 
 from AppKit import (
     NSAnimationContext,
+    NSEvent,
     NSBackingStoreBuffered,
     NSGraphicsContext,
     NSSymbolVariableColorEffect,
@@ -44,6 +48,7 @@ from PyObjCTools import AppHelper
 
 from echo_os import settings
 from echo_os.echo.kb_usage import KbUsage
+from echo_os.menubar.popup_position import Anchor, anchor_from_drop, stack_origins
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,8 @@ CORNER_RADIUS = 12
 FADE_SECONDS = 0.25
 SLIDE_DISTANCE = 24
 SLIDE_SECONDS = 0.22
+DRAG_THRESHOLD = 3  # points the mouse must move before a press becomes a drag instead of a click
+SNAP_DISTANCE = 24  # dropping within this of the default corner restores the default position
 
 # Same tokens as the panel's styles.css.
 BACKGROUND = NSColor.colorWithSRGBRed_green_blue_alpha_(22 / 255, 27 / 255, 34 / 255, 0.97)
@@ -191,6 +198,10 @@ class CardView(NSView):
         self.on_click = on_click
         self.color = color
         self.voice_indicator = None
+        self.on_drag = None  # (dx, dy) while dragging; set by the presenter
+        self.on_drop = None
+        self._press = self._last = None
+        self._dragging = False
         return self
 
     def isOpaque(self):  # noqa: N802
@@ -215,9 +226,30 @@ class CardView(NSView):
         path.setLineWidth_(1.0)
         path.stroke()
 
+    # A press that moves less than DRAG_THRESHOLD is a click (handled on release); more is a drag.
+    # Global mouse coordinates, because the window itself moves under the mouse during the drag.
     def mouseDown_(self, event):  # noqa: N802
-        if self.on_click is not None:
-            self.on_click()
+        self._press = self._last = NSEvent.mouseLocation()
+        self._dragging = False
+
+    def mouseDragged_(self, event):  # noqa: N802
+        if self._press is None:
+            return
+        point = NSEvent.mouseLocation()
+        if not self._dragging and max(abs(point.x - self._press.x), abs(point.y - self._press.y)) < DRAG_THRESHOLD:
+            return
+        self._dragging = True
+        if self.on_drag is not None:
+            self.on_drag(point.x - self._last.x, point.y - self._last.y)
+        self._last = point
+
+    def mouseUp_(self, event):  # noqa: N802
+        if self._press is None:
+            return
+        dragged, self._press, self._dragging = self._dragging, None, False
+        callback = self.on_drop if dragged else self.on_click
+        if callback is not None:
+            callback()
 
 
 class FilledView(NSView):
@@ -442,9 +474,14 @@ def add_countdown(card, seconds: float) -> None:
 class PopupPresenter:
     """Implements the announcer's Popup contract with stacked top-right cards."""
 
-    def __init__(self, *, on_click: Callable[[], None] | None = None):
+    def __init__(self, *, on_click: Callable[[], None] | None = None, preferences=None):
+        """`preferences` (echo_os.echo.preferences.Preferences) keeps the dragged-to position; without
+        it the stack always sits in the default corner and drags last until the cards close."""
         self._on_click = on_click
-        self._cards: list[_Card] = []  # top to bottom
+        self._preferences = preferences
+        self._cards: list[_Card] = []  # oldest first: nearest the anchor
+        self._dragging = False
+        self._unsaved_anchor: Anchor | None = None  # used only without preferences
 
     def show(self, announcement, *, speaking: bool) -> None:
         AppHelper.callAfter(self._show_on_main, announcement, speaking)
@@ -478,6 +515,8 @@ class PopupPresenter:
             card.frame(), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False
         )
         holder["window"] = window
+        card.on_drag = self._drag_by
+        card.on_drop = self._drop
         window.setReleasedWhenClosed_(False)
         window.setLevel_(NSStatusWindowLevel)
         window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary)
@@ -522,32 +561,71 @@ class PopupPresenter:
         AppHelper.callLater(FADE_SECONDS, window.orderOut_, None)
         self._layout()
 
-    def _layout(self, entering=None) -> None:
-        """Stacks the cards from the top-right corner. The entering card slides in from the right;
-        the others glide to their new places."""
-        screen = NSScreen.mainScreen()
-        if screen is None:
+    def _drag_by(self, dx: float, dy: float) -> None:
+        """The whole stack follows the mouse, unanimated."""
+        self._dragging = True
+        for card in self._cards:
+            origin = card.window.frame().origin
+            card.window.setFrameOrigin_((origin.x + dx, origin.y + dy))
+
+    def _drop(self) -> None:
+        self._dragging = False
+        if not self._cards:
             return
-        visible = screen.visibleFrame()
-        top = visible.origin.y + visible.size.height - settings.POPUP_MARGIN
-        x = visible.origin.x + visible.size.width - settings.POPUP_WIDTH - settings.POPUP_MARGIN
+        frames = [card.window.frame() for card in self._cards]
+        anchor = anchor_from_drop(
+            left=frames[0].origin.x, top=max(f.origin.y + f.size.height for f in frames),
+            bottom=min(f.origin.y for f in frames), screens=_visible_frames(), default_screen=_default_screen(),
+            width=settings.POPUP_WIDTH, margin=settings.POPUP_MARGIN, snap_distance=SNAP_DISTANCE)
+        logger.info("Popups moved to %s", anchor or "the default corner")
+        if self._preferences is not None:
+            self._preferences.set_popup_anchor(anchor.to_dict() if anchor else None)
+        else:
+            self._unsaved_anchor = anchor
+        self._layout()
+
+    def _anchor(self) -> Anchor | None:
+        if self._preferences is not None:
+            return Anchor.from_dict(self._preferences.popup_anchor)
+        return self._unsaved_anchor
+
+    def _layout(self, entering=None) -> None:
+        """Stacks the cards from the anchor (see popup_position.py). The entering card slides in
+        sideways from the nearer screen edge; the others glide to their new places."""
+        if self._dragging:  # the drop lays everything out
+            return
+        default = _default_screen()
+        origins = stack_origins(self._anchor(), [card.window.frame().size.height for card in self._cards],
+                                screens=_visible_frames(), default_screen=default, width=settings.POPUP_WIDTH,
+                                margin=settings.POPUP_MARGIN, gap=settings.POPUP_GAP)
 
         def animate(context):
             context.setDuration_(SLIDE_SECONDS)
-            for window, origin in moves:
-                window.animator().setFrameOrigin_(origin)
-                if window is entering:
-                    window.animator().setAlphaValue_(1.0)
+            for card, (x, y) in zip(self._cards, origins):
+                size = card.window.frame().size
+                # NSWindow's animator animates frame changes, not setFrameOrigin_.
+                card.window.animator().setFrame_display_(NSMakeRect(x, y, size.width, size.height), True)
+                if card.window is entering:
+                    card.window.animator().setAlphaValue_(1.0)
 
-        moves = []
-        for card in self._cards:
-            height = card.window.frame().size.height
-            top -= height
+        for card, (x, y) in zip(self._cards, origins):
             if card.window is entering:
-                card.window.setFrameOrigin_((x + SLIDE_DISTANCE, top))
-            moves.append((card.window, (x, top)))
-            top -= settings.POPUP_GAP
+                from_right = x + settings.POPUP_WIDTH / 2 >= default[0] + default[2] / 2
+                card.window.setFrameOrigin_((x + (SLIDE_DISTANCE if from_right else -SLIDE_DISTANCE), y))
         NSAnimationContext.runAnimationGroup_completionHandler_(animate, None)
+
+
+def _rect(frame) -> tuple[float, float, float, float]:
+    return (frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
+
+
+def _visible_frames() -> list:
+    return [_rect(screen.visibleFrame()) for screen in NSScreen.screens()]
+
+
+def _default_screen() -> tuple[float, float, float, float]:
+    screen = NSScreen.mainScreen() or NSScreen.screens()[0]
+    return _rect(screen.visibleFrame())
 
 
 @dataclass

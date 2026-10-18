@@ -17,7 +17,9 @@ by the session's call sign:
   is spoken (and still appears when speech is muted). Each working directory has its own card color,
   so you can tell projects apart at a glance. The card shows a live waveform while it's spoken, how
   long the turn took, how many tools it used and when it finished, and how the KB figured in: used
-  (with the number of notes), nothing relevant, needs login, unavailable, or off.
+  (with the number of notes), nothing relevant, needs login, unavailable, or off. Drag a card to move
+  the stack anywhere; new cards appear there from then on (drag it back to the top-right corner to
+  reset).
 - **Questions and suggestions on screen.** When the agent asks you something or suggests next steps,
   the voice says so ("…two questions for you on screen") and the card lists them as bullets. Those
   cards stay up until you close them, reply to that session, or it ends.

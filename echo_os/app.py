@@ -81,10 +81,11 @@ class EchoApp:
         tmp.replace(self.prompt_path)
 
 
-def build_app(popup: Popup | None = None) -> EchoApp:
+def build_app(popup: Popup | None = None, preferences=None) -> EchoApp:
     """The real service, wired from settings. Imports are local so tests never touch providers.
 
-    `popup` is supplied by the menu bar app; the headless daemon runs without one.
+    `popup` is supplied by the menu bar app; the headless daemon runs without one. The menu bar app
+    also passes its `preferences`, so the popup's saved position and the mute flag share one store.
     """
     from echo_os.agents.headline.agent import HeadlineAgent
     from echo_os.agents.kb_relevance.agent import KbRelevanceAgent
@@ -103,7 +104,7 @@ def build_app(popup: Popup | None = None) -> EchoApp:
     registry = SessionRegistry(settings.SESSIONS_PATH, call_signs=settings.CALL_SIGNS,
                                color_count=len(settings.DIRECTORY_COLORS),
                                idle_expiry_seconds=settings.SESSION_IDLE_EXPIRY_SECONDS)
-    preferences = Preferences(settings.PREFERENCES_PATH)
+    preferences = preferences or Preferences(settings.PREFERENCES_PATH)
     announcer = Announcer(voice=create_voice(), preferences=preferences, popup=popup)
     pipeline = EchoPipeline(
         registry=registry,

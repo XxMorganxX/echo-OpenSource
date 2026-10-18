@@ -38,6 +38,7 @@ from Foundation import NSDistributedNotificationCenter, NSObject, NSURL, NSURLRe
 from WebKit import WKWebView, WKWebViewConfiguration
 
 from echo_os import settings
+from echo_os.echo.preferences import Preferences
 from echo_os.menubar.popup import PopupPresenter
 
 APP_NAME = "Echo"
@@ -85,10 +86,10 @@ class FloatingPanel(NSPanel):
 class DaemonRuntime:
     """Starts the embedded echo-OS service unless another instance already serves the port."""
 
-    def __init__(self, host: str, port: int, popup=None):
+    def __init__(self, host: str, port: int, popup=None, preferences=None):
         self.base_url = f"http://{host}:{port}"
         self.host, self.port = host, port
-        self.popup = popup
+        self.popup, self.preferences = popup, preferences
         self.app = None
         self.server = None
 
@@ -99,7 +100,7 @@ class DaemonRuntime:
         from echo_os.app import build_app
         from echo_os.server.server import create_server
 
-        self.app = build_app(popup=self.popup)
+        self.app = build_app(popup=self.popup, preferences=self.preferences)
         self.app.start()
         self.server = create_server(self.app, host=self.host, port=self.port)
         threading.Thread(target=self.server.serve_forever, name="echo-http", daemon=True).start()
@@ -127,8 +128,10 @@ class EchoMenubarApp(NSObject):
         if self is None:
             return None
         self.show_on_launch = show_on_launch
-        popup = PopupPresenter(on_click=lambda: self.showWindow_(None)) if settings.POPUP_ENABLED else None
-        self.runtime = DaemonRuntime(settings.SERVER_HOST, settings.SERVER_PORT, popup=popup)
+        preferences = Preferences(settings.PREFERENCES_PATH)
+        popup = (PopupPresenter(on_click=lambda: self.showWindow_(None), preferences=preferences)
+                 if settings.POPUP_ENABLED else None)
+        self.runtime = DaemonRuntime(settings.SERVER_HOST, settings.SERVER_PORT, popup=popup, preferences=preferences)
         self.status_item = None
         self.window = None
         self.webview = None
