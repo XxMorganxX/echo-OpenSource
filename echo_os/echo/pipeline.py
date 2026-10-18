@@ -64,6 +64,7 @@ class Echo:
     error: str | None = None
     questions: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
+    color: int | None = None  # the working directory's color slot
 
 
 class EchoPipeline:
@@ -151,7 +152,7 @@ class EchoPipeline:
             session = self.registry.touch(job.session_id, cwd="", now=now)
         echo = Echo(
             id=uuid.uuid4().hex[:12], created_at=now, session_id=session.session_id,
-            call_sign=session.call_sign, project=session.project,
+            call_sign=session.call_sign, project=session.project, color=session.color,
             ask=truncate(digest.ask, STORED_ASK_CHARS), tool_calls=digest.tool_calls,
             duration_seconds=round(digest.duration_seconds, 1),
         )
@@ -183,6 +184,8 @@ class EchoPipeline:
                 spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline,
                 kb_usage=kb_usage_from_record(echo.kb),
                 questions=tuple(echo.questions), suggestions=tuple(echo.suggestions), session_id=echo.session_id,
+                duration_seconds=echo.duration_seconds, tool_calls=echo.tool_calls, finished_at=echo.created_at,
+                color=echo.color,
             ))
 
         echo.total_ms = int((time.monotonic() - started) * 1000)
@@ -201,6 +204,8 @@ class EchoPipeline:
             kb_usage=kb_usage_from_record(record.get("kb")),
             questions=tuple(record.get("questions") or ()), suggestions=tuple(record.get("suggestions") or ()),
             session_id=record.get("session_id", ""),
+            duration_seconds=record.get("duration_seconds"), tool_calls=record.get("tool_calls"),
+            finished_at=record.get("created_at"), color=record.get("color"),
         ))
         return True
 

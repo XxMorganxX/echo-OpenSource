@@ -4,6 +4,11 @@ A call sign is held from a session's first hook event until it ends (SessionEnd,
 dies, or it goes quiet past the expiry). The lowest free sign is handed out first; a resumed
 session gets its previous sign back when that sign is free. State is persisted so names survive a
 daemon restart.
+
+Each working directory also gets a color slot, shown on its popups and in the panel. Sessions in
+the same directory share it; live directories never share one while a free slot exists. A
+directory's preferred slot comes from a hash of its path, so a project usually keeps its color
+from one day to the next.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
@@ -30,6 +36,7 @@ class Session:
     started_at: float
     last_event_at: float
     last_headline: str = ""
+    color: int | None = None  # slot in the directory color palette
 
 
 def process_is_alive(pid: int) -> bool:
@@ -43,12 +50,18 @@ def process_is_alive(pid: int) -> bool:
 
 
 class SessionRegistry:
-    def __init__(self, path: Path, *, call_signs: list[str], idle_expiry_seconds: float = 12 * 3600):
+    def __init__(self, path: Path, *, call_signs: list[str], idle_expiry_seconds: float = 12 * 3600,
+                 color_count: int = 8):
         self._path = path
         self._call_signs = call_signs
+        self._color_count = color_count
         self._idle_expiry_seconds = idle_expiry_seconds
         self._lock = threading.Lock()
         self._sessions: dict[str, Session] = self._load()
+        # Sessions saved before directory colors existed get theirs now, not at their next hook event.
+        for session in self._sessions.values():
+            if session.status != "ended" and session.color is None:
+                session.color = self._directory_color(session)
 
     # -- Queries ---------------------------------------------------------------------------
     def get(self, session_id: str) -> Session | None:
@@ -80,8 +93,11 @@ class SessionRegistry:
                 )
                 self._sessions[session_id] = session
             session.last_event_at = now
-            if cwd:
+            if cwd and cwd != session.cwd:
                 session.cwd, session.project = cwd, Path(cwd).name or cwd
+                session.color = None
+            if session.color is None:
+                session.color = self._directory_color(session)
             if pid:
                 session.pid = pid
             self._save()
@@ -143,6 +159,21 @@ class SessionRegistry:
                 if candidate not in taken:
                     return candidate
             round_number += 1
+
+    def _directory_color(self, session: Session) -> int:
+        """The color of another live session in the same directory, else the directory's preferred
+        slot, else the next free one. With more live directories than colors, slots are shared."""
+        others = [s for s in self._sessions.values() if s.status != "ended" and s.session_id != session.session_id]
+        for other in others:
+            if other.cwd == session.cwd and other.color is not None:
+                return other.color
+        taken = {other.color for other in others}
+        preferred = zlib.crc32(session.cwd.encode("utf-8")) % self._color_count
+        for offset in range(self._color_count):
+            candidate = (preferred + offset) % self._color_count
+            if candidate not in taken:
+                return candidate
+        return preferred
 
     def _sign_order(self, call_sign: str) -> tuple[int, int]:
         base, _, suffix = call_sign.partition(" ")

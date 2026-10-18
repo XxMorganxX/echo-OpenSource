@@ -33,11 +33,20 @@ class Announcement:
     suggestions: tuple[str, ...] = ()
     # The Claude Code session this echo came from; its popups close when you reply to it or it ends.
     session_id: str = ""
+    # The finished turn, shown in the popup's footer; None for messages that aren't echoes.
+    duration_seconds: float | None = None
+    tool_calls: int | None = None
+    finished_at: float | None = None  # epoch seconds
+    # The working directory's slot in settings.DIRECTORY_COLORS; None draws the card neutral.
+    color: int | None = None
 
 
 class Popup(Protocol):
-    def show(self, announcement: "Announcement") -> None:
-        """Displays the popup and returns at once."""
+    def show(self, announcement: "Announcement", *, speaking: bool) -> None:
+        """Displays the popup and returns at once. `speaking` is False when speech is muted."""
+
+    def finished_speaking(self, announcement: "Announcement") -> None:
+        """The voice is done with this announcement (spoken, or failed)."""
 
     def resolve(self, session_id: str) -> None:
         """Closes the session's popups that wait for an answer (you replied, or the session ended)."""
@@ -60,14 +69,20 @@ class Announcer(QueueThread):
                 logger.exception("Popup resolve failed")
 
     def _handle(self, announcement: Announcement) -> None:
-        if self._popup is not None:
-            try:
-                self._popup.show(announcement)
-            except Exception:
-                logger.exception("Popup failed")
-        if self._preferences.muted:
+        speaking = not self._preferences.muted
+        self._tell_popup("show", announcement, speaking=speaking)
+        if not speaking:
             return
         try:
             self._voice.speak(announcement.spoken_text)
         except VoiceError as exc:
             logger.error("Speech failed: %s", exc)
+        self._tell_popup("finished_speaking", announcement)
+
+    def _tell_popup(self, method: str, *args, **kwargs) -> None:
+        if self._popup is None:
+            return
+        try:
+            getattr(self._popup, method)(*args, **kwargs)
+        except Exception:
+            logger.exception("Popup %s failed", method)

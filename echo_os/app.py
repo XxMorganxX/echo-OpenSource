@@ -64,6 +64,7 @@ class EchoApp:
             "kb_auth": self.kb_monitor.snapshot() if self.kb_monitor else {"state": "disabled"},
             "thresholds": self.thresholds,
             "voice": self.voice_provider,
+            "directory_colors": list(settings.DIRECTORY_COLORS),
         }
 
     def read_prompt(self) -> str:
@@ -100,6 +101,7 @@ def build_app(popup: Popup | None = None) -> EchoApp:
     model = ClaudeCodeHeadless(binary=settings.CLAUDE_BINARY, workdir=settings.HEADLESS_WORKDIR,
                                child_env_flag=settings.CHILD_ENV_FLAG)
     registry = SessionRegistry(settings.SESSIONS_PATH, call_signs=settings.CALL_SIGNS,
+                               color_count=len(settings.DIRECTORY_COLORS),
                                idle_expiry_seconds=settings.SESSION_IDLE_EXPIRY_SECONDS)
     preferences = Preferences(settings.PREFERENCES_PATH)
     announcer = Announcer(voice=create_voice(), preferences=preferences, popup=popup)

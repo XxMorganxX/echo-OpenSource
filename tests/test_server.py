@@ -173,3 +173,9 @@ def test_kb_check_runs_a_fresh_check(running):
     app.kb_monitor = FakeMonitor()
     status, body = call("POST", f"{base}/api/kb/check", {})
     assert status == 200 and body["state"] == "connected" and app.kb_monitor.checks == 1
+
+
+def test_state_includes_the_directory_palette(running):
+    from echo_os import settings
+    base, *_ = running
+    assert call("GET", f"{base}/api/state")[1]["directory_colors"] == list(settings.DIRECTORY_COLORS)

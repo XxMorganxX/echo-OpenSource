@@ -72,6 +72,10 @@ KB_STATUS_CHECK_SECONDS = 5 * 60
 SPOKEN_TEMPLATE = "{call_sign}. {headline}"
 RECENT_ECHOES_LIMIT = 30
 
+# One color per working directory (see sessions.py), used by the popup cards and the panel.
+# Live directories get distinct colors up to this many.
+DIRECTORY_COLORS = ("#58a6ff", "#3fb950", "#bc8cff", "#f0883e", "#f778ba", "#39c5cf", "#e3b341", "#ff7b72")
+
 # -- Popup (menu bar app only) ----------------------------------------------------------
 # A small card in the top-right corner that shows each announcement while it is spoken.
 POPUP_ENABLED = os.environ.get("ECHO_OS_POPUP", "true").lower() == "true"

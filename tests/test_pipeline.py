@@ -267,6 +267,28 @@ def test_announcements_carry_their_session_so_popups_can_be_resolved(make_pipeli
     assert parts["announcer"].announced[-1].session_id == "s9"
 
 
+def test_announcements_carry_the_turn_length_tool_count_and_finish_time(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    announcement = parts["announcer"].announced[-1]
+    assert announcement.tool_calls == 6
+    assert announcement.duration_seconds == echo.duration_seconds > 0
+    assert announcement.finished_at == echo.created_at
+    pipeline.replay(echo.id)
+    replayed = parts["announcer"].announced[-1]
+    assert (replayed.tool_calls, replayed.duration_seconds, replayed.finished_at) == (
+        6, echo.duration_seconds, echo.created_at)
+
+
+def test_announcements_carry_the_working_directory_color(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    color = parts["registry"].get(echo.session_id).color
+    assert color is not None and parts["announcer"].announced[-1].color == color
+    pipeline.replay(echo.id)
+    assert parts["announcer"].announced[-1].color == color
+
+
 def test_your_next_message_to_a_session_resolves_its_popups(make_pipeline):
     pipeline, parts = make_pipeline()
     pipeline.handle_hook(hook("UserPromptSubmit", session_id="s1"), entrypoint="cli", pid=None, now=5)

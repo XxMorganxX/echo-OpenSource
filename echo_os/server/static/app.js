@@ -5,6 +5,14 @@ const el = (id) => document.getElementById(id);
 const panelBridge = window.webkit && window.webkit.messageHandlers ? window.webkit.messageHandlers.echoPanel : null;
 let muted = false;
 let promptDirty = false;
+let directoryColors = [];
+
+// The working directory's color, matching its popup cards; null leaves the default text color.
+function signNode(callSign, color) {
+  const sign = node("span", "sign", callSign);
+  if (color !== null && color !== undefined && directoryColors.length) sign.style.color = directoryColors[color % directoryColors.length];
+  return sign;
+}
 
 async function api(method, path, body) {
   const options = { method, headers: {} };
@@ -50,7 +58,7 @@ function renderSessions(sessions) {
     item.title = session.last_headline || session.cwd;
     const dot = node("span", `dot ${session.status}`);
     dot.setAttribute("aria-label", session.status);
-    item.append(dot, node("span", "sign", session.call_sign), node("span", "project", session.project));
+    item.append(dot, signNode(session.call_sign, session.color), node("span", "project", session.project));
     list.append(item);
   }
 }
@@ -65,7 +73,7 @@ function renderEchoes(echoes) {
   for (const echo of echoes) {
     const item = node("li", "echo");
     const meta = node("div", "echo-meta");
-    meta.append(node("span", "sign", echo.call_sign),
+    meta.append(signNode(echo.call_sign, echo.color),
       document.createTextNode(`${echo.project} · ${minutes(echo.duration_seconds)} · ${echo.tool_calls} tools · ${ago(echo.created_at)}`));
     if (echo.kb && echo.kb.relevant) {
       const badge = node("span", "kb-badge", "KB");
@@ -152,6 +160,7 @@ async function refresh() {
   try {
     const state = await api("GET", "/api/state");
     muted = state.muted;
+    directoryColors = state.directory_colors || [];
     el("liveCount").textContent = `${state.sessions.length} live`;
     renderMute();
     if (!kbChecking) renderKbLight(state.kb_auth || {});

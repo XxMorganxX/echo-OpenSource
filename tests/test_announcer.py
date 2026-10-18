@@ -28,8 +28,11 @@ class RecordingPopup:
     def __init__(self, events):
         self.events = events
 
-    def show(self, announcement):
-        self.events.append(("popup", announcement.title))
+    def show(self, announcement, *, speaking):
+        self.events.append(("popup", announcement.title) if speaking else ("popup muted", announcement.title))
+
+    def finished_speaking(self, announcement):
+        self.events.append(("finished", announcement.title))
 
 
 def make(tmp_path, **voice_kwargs):
@@ -49,8 +52,9 @@ def test_each_popup_appears_as_its_speech_starts_one_at_a_time(tmp_path):
         announcer.announce(item(name))
     announcer.start()
     announcer.stop()
-    assert voice.events == [("popup", "Alpha"), ("speak", "Alpha. done"), ("popup", "Bravo"), ("speak", "Bravo. done"),
-                            ("popup", "Charlie"), ("speak", "Charlie. done")]
+    assert voice.events == [("popup", "Alpha"), ("speak", "Alpha. done"), ("finished", "Alpha"),
+                            ("popup", "Bravo"), ("speak", "Bravo. done"), ("finished", "Bravo"),
+                            ("popup", "Charlie"), ("speak", "Charlie. done"), ("finished", "Charlie")]
     assert voice.max_active == 1
 
 
@@ -60,7 +64,7 @@ def test_mute_is_checked_at_play_time_and_popups_still_show(tmp_path):
     prefs.set_muted(True)  # muted after queueing, before playing
     announcer.start()
     announcer.stop()
-    assert voice.events == [("popup", "Alpha")]
+    assert voice.events == [("popup muted", "Alpha")]
 
 
 def test_voice_errors_do_not_stop_the_queue(tmp_path):
@@ -70,6 +74,8 @@ def test_voice_errors_do_not_stop_the_queue(tmp_path):
     announcer.start()
     announcer.stop()
     assert ("speak", "Bravo. done") in voice.events
+    # The speaking indicator must stop even when the voice failed.
+    assert ("finished", "Alpha") in voice.events
 
 
 def test_announcer_works_without_a_popup(tmp_path):
@@ -85,8 +91,11 @@ def test_popup_receives_the_kb_indicator(tmp_path):
     received = []
 
     class Popup:
-        def show(self, announcement):
+        def show(self, announcement, *, speaking):
             received.append(announcement.kb_usage)
+
+        def finished_speaking(self, announcement):
+            pass
 
     announcer = Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=Popup())
     announcer.announce(Announcement(spoken_text="x", title="A", subtitle="p", body="x", kb_usage=KbUsage("used", 1)))
@@ -99,7 +108,10 @@ def test_resolve_reaches_the_popup_immediately_not_behind_the_queue(tmp_path):
     resolved = []
 
     class Popup:
-        def show(self, announcement):
+        def show(self, announcement, *, speaking):
+            pass
+
+        def finished_speaking(self, announcement):
             pass
 
         def resolve(self, session_id):

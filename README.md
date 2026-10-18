@@ -14,8 +14,10 @@ by the session's call sign:
 - **Editable system prompt.** Change how headlines are written from the panel. Edits apply to the
   next echo.
 - **A popup you can read.** Each echo also appears as a small card in the top-right corner while it
-  is spoken (and still appears when speech is muted). Its corner shows how the KB figured in:
-  used (with the number of notes), nothing relevant, needs login, unavailable, or off.
+  is spoken (and still appears when speech is muted). Each working directory has its own card color,
+  so you can tell projects apart at a glance. The card shows a live waveform while it's spoken, how
+  long the turn took, how many tools it used and when it finished, and how the KB figured in: used
+  (with the number of notes), nothing relevant, needs login, unavailable, or off.
 - **Questions and suggestions on screen.** When the agent asks you something or suggests next steps,
   the voice says so ("…two questions for you on screen") and the card lists them as bullets. Those
   cards stay up until you close them, reply to that session, or it ends.

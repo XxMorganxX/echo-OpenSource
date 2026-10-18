@@ -3,7 +3,7 @@ from AppKit import NSApplication
 from echo_os import settings
 from echo_os.echo.kb_usage import KbUsage
 from echo_os.echo.announcer import Announcement
-from echo_os.menubar.popup import build_card, display_seconds, is_sticky
+from echo_os.menubar.popup import NEUTRAL, build_card, card_color, display_seconds, is_sticky, meta_text
 
 # Controls only dispatch their actions once an NSApplication exists, as it always does in the app.
 NSApplication.sharedApplication()
@@ -55,24 +55,29 @@ def test_messages_without_kb_usage_have_no_status():
     assert _kb_status(card_with(None)) == ([], [])
 
 
-def test_status_label_never_overlaps_the_heading():
-    card = build_card(title="November 2", subtitle="a-very-long-project-folder-name-indeed", body="Done.",
-                      on_click=None, kb_usage=KbUsage("not-relevant"))
-    from AppKit import NSTextField
-    fields = [v for v in card.subviews() if isinstance(v, NSTextField)]
-    heading = next(f for f in fields if f.stringValue().startswith("November"))
+def test_kb_status_sits_in_the_footer_right_aligned_below_the_headline():
+    card = build_card(title="November", subtitle="p", body="Done.", on_click=None, kb_usage=KbUsage("not-relevant"),
+                      meta="12 min · 34 tools · 2:41 PM")
+    fields = _fields(card)
+    body = next(f for f in fields if f.stringValue() == "Done.")
     status = next(f for f in fields if f.stringValue().startswith("KB"))
-    assert heading.frame().origin.x + heading.frame().size.width <= status.frame().origin.x - 4 + 0.5
+    meta = next(f for f in fields if f.stringValue().startswith("12 min"))
+    assert status.frame().origin.y + status.frame().size.height <= body.frame().origin.y
+    assert abs((status.frame().origin.x + status.frame().size.width) - (card.frame().size.width - 14)) < 1
+    assert meta.frame().origin.x + meta.frame().size.width <= status.frame().origin.x - 4 + 0.5
 
 
-def test_heading_stays_on_one_line_with_a_long_project_name():
-    from AppKit import NSTextField
+def test_project_name_stays_on_one_line_and_clear_of_the_header_icons():
+    long_name = "a-long-project-folder-name-that-would-wrap-onto-a-second-line"
 
-    def heading_height(subtitle):
-        card = build_card(title="Foxtrot", subtitle=subtitle, body="Done.", on_click=None, kb_usage=KbUsage("unavailable"))
-        return next(f for f in card.subviews() if isinstance(f, NSTextField) and f.stringValue().startswith("Foxtrot")).frame().size.height
+    def project_field(subtitle):
+        card = build_card(title="Foxtrot", subtitle=subtitle, body="Done.", on_click=None, voice_state="speaking",
+                          questions=("Push?",), on_close=lambda: None)
+        return card, next(f for f in _fields(card) if f.stringValue() == subtitle)
 
-    assert heading_height("a-long-project-folder-name-that-would-wrap") == heading_height("p")
+    card, field = project_field(long_name)
+    assert field.frame().size.height == project_field("p")[1].frame().size.height
+    assert field.frame().origin.x + field.frame().size.width <= _voice_indicator(card).frame().origin.x
 
 
 def _fields(view):
@@ -156,10 +161,83 @@ def test_sticky_cards_have_a_dismiss_button_and_plain_cards_do_not():
     assert _buttons(build_card(title="A", subtitle="p", body="Done.", on_click=None)) == []
 
 
-def test_dismiss_button_sits_right_of_the_kb_status():
+def test_dismiss_button_sits_in_the_header_right_of_the_speaking_indicator():
     card = build_card(title="A", subtitle="p", body="Done.", on_click=None, questions=("Push?",),
-                      kb_usage=KbUsage("not-relevant"), on_close=lambda: None)
+                      voice_state="speaking", on_close=lambda: None)
     button = _buttons(card)[0]
-    status = next(f for f in _fields(card) if f.stringValue().startswith("KB"))
-    assert status.frame().origin.x + status.frame().size.width <= button.frame().origin.x
+    indicator = _voice_indicator(card)
+    assert indicator.frame().origin.x + indicator.frame().size.width <= button.frame().origin.x
     assert button.frame().origin.x + button.frame().size.width <= card.frame().size.width
+    body = next(f for f in _fields(card) if f.stringValue() == "Done.")
+    assert button.frame().origin.y > body.frame().origin.y + body.frame().size.height - 1
+
+
+def _voice_indicator(card):
+    from AppKit import NSImageView
+    found = [view for view in card.subviews() if isinstance(view, NSImageView) and view.toolTip() in ("Speaking", "Muted")]
+    return found[0] if found else None
+
+
+def test_speaking_cards_show_a_speaking_indicator():
+    assert _voice_indicator(build_card(title="A", subtitle="p", body="Done.", on_click=None,
+                                       voice_state="speaking")).toolTip() == "Speaking"
+
+
+def test_muted_cards_say_so():
+    assert _voice_indicator(build_card(title="A", subtitle="p", body="Done.", on_click=None,
+                                       voice_state="muted")).toolTip() == "Muted"
+
+
+def test_cards_without_a_voice_state_have_no_indicator():
+    assert _voice_indicator(build_card(title="A", subtitle="p", body="Done.", on_click=None)) is None
+
+
+def test_each_color_slot_has_its_own_color():
+    assert card_color(0) == card_color(0)
+    assert len({tuple(card_color(i).getRed_green_blue_alpha_(None, None, None, None)) for i in range(len(settings.DIRECTORY_COLORS))}) == len(settings.DIRECTORY_COLORS)
+
+
+def test_messages_without_a_directory_are_neutral():
+    assert card_color(None) == NEUTRAL
+
+
+def test_card_is_drawn_in_its_directory_color():
+    assert build_card(title="A", subtitle="p", body="Done.", on_click=None, color=2).color == card_color(2)
+    assert build_card(title="CI", subtitle="", body="Done.", on_click=None).color == NEUTRAL
+
+
+def test_call_sign_is_on_a_pill_with_the_project_beside_it():
+    card = build_card(title="Charlie", subtitle="echo-OS", body="Done.", on_click=None)
+    texts = _texts(card)
+    assert "Charlie" in texts and "echo-OS" in texts
+
+
+def test_meta_line_reads_length_tools_and_finish_time():
+    from datetime import datetime
+    finished = datetime(2026, 10, 17, 14, 41).timestamp()
+    assert meta_text(duration_seconds=725, tool_calls=34, finished_at=finished) == "12 min · 34 tools · 2:41 PM"
+
+
+def test_meta_line_uses_seconds_hours_and_singular_tool():
+    assert meta_text(duration_seconds=45, tool_calls=1, finished_at=None) == "45 s · 1 tool"
+    assert meta_text(duration_seconds=3900, tool_calls=None, finished_at=None) == "1 h 5 min"
+
+
+def test_meta_line_is_empty_without_details():
+    assert meta_text(duration_seconds=None, tool_calls=None, finished_at=None) == ""
+
+
+def test_section_headings_have_icons():
+    from AppKit import NSImageView
+
+    def icons(card):
+        found = []
+        for sub in card.subviews():
+            if isinstance(sub, NSImageView):
+                found.append(sub)
+            found.extend(icons(sub))
+        return found
+
+    card = build_card(title="A", subtitle="p", body="Done.", on_click=None, questions=("Push?",), suggestions=("Tests",))
+    tips = [view.toolTip() for view in icons(card)]
+    assert "Questions for you" in tips and "Suggestions" in tips

@@ -99,3 +99,53 @@ def test_last_headline_is_recorded(tmp_path):
     registry.touch("s1", cwd="/x", now=1)
     registry.set_last_headline("s1", "Done.", now=5)
     assert registry.get("s1").last_headline == "Done."
+
+
+def test_sessions_in_the_same_directory_share_a_color(tmp_path):
+    registry = make(tmp_path)
+    first = registry.touch("s1", cwd="/x/proj-a", now=1)
+    second = registry.touch("s2", cwd="/x/proj-a", now=2)
+    assert first.color == second.color is not None
+
+
+def test_live_directories_never_share_a_color(tmp_path):
+    registry = make(tmp_path, color_count=2)
+    # With two slots, two directories must take both, whatever their hashes prefer.
+    colors = {registry.touch(f"s{i}", cwd=f"/x/proj-{i}", now=i).color for i in range(2)}
+    assert colors == {0, 1}
+
+
+def test_a_directory_gets_its_color_back_in_a_later_session(tmp_path):
+    registry = make(tmp_path)
+    color = registry.touch("s1", cwd="/x/proj-a", now=1).color
+    registry.end("s1")
+    assert registry.touch("s2", cwd="/x/proj-a", now=50).color == color
+
+
+def test_more_directories_than_colors_still_get_a_color(tmp_path):
+    registry = make(tmp_path, color_count=2)
+    for i in range(3):
+        registry.touch(f"s{i}", cwd=f"/x/proj-{i}", now=i)
+    assert registry.get("s2").color in (0, 1)
+
+
+def test_colors_survive_a_restart(tmp_path):
+    registry = make(tmp_path)
+    color = registry.touch("s1", cwd="/x/proj-a", now=1).color
+    assert make(tmp_path).get("s1").color == color
+
+
+def test_sessions_saved_before_colors_existed_get_one(tmp_path):
+    import json
+    (tmp_path / "sessions.json").write_text(json.dumps([{
+        "session_id": "s1", "call_sign": "Alpha", "project": "a", "cwd": "/x/a", "pid": None, "status": "idle",
+        "started_at": 1, "last_event_at": 1, "last_headline": ""}]))
+    assert make(tmp_path).get("s1").color is not None
+
+
+def test_moving_to_another_directory_changes_the_color(tmp_path):
+    registry = make(tmp_path, color_count=2)
+    registry.touch("s1", cwd="/x/a", now=1)
+    registry.touch("s2", cwd="/x/b", now=1)
+    moved = registry.touch("s2", cwd="/x/a", now=2)
+    assert moved.color == registry.get("s1").color
