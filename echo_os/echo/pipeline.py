@@ -8,6 +8,7 @@ KB relevance agent → headline agent → speech and history.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 import uuid
@@ -65,6 +66,17 @@ class Echo:
     questions: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     color: int | None = None  # the working directory's color slot
+
+
+def spoken_name(project: str) -> str:
+    """A folder name as a voice should say it: "web-app" → "web app"."""
+    return " ".join(re.split(r"[-_.\s]+", project)).strip()
+
+
+def spoken_text(template: str, *, project: str, call_sign: str, headline: str) -> str:
+    """The words spoken for an echo. The project and call sign come from here, never from a model."""
+    text = template.format(project=spoken_name(project), call_sign=call_sign, headline=headline)
+    return text.lstrip(" ,.")  # a session with no known directory leaves the separator behind
 
 
 class EchoPipeline:
@@ -178,7 +190,8 @@ class EchoPipeline:
             echo.headline = headline.text
             echo.questions, echo.suggestions = list(headline.questions), list(headline.suggestions)
             echo.headline_cost_usd, echo.headline_ms = headline.cost_usd, headline.duration_ms
-            echo.spoken_text = self._spoken_template.format(call_sign=echo.call_sign, headline=headline.text)
+            echo.spoken_text = spoken_text(self._spoken_template, project=echo.project, call_sign=echo.call_sign,
+                                           headline=headline.text)
             self.registry.set_last_headline(session.session_id, headline.text, now=now)
             self._announcer.announce(Announcement(
                 spoken_text=echo.spoken_text, title=echo.call_sign, subtitle=echo.project, body=echo.headline,

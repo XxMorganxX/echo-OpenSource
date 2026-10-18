@@ -2,12 +2,14 @@
 
 Hear when a long Claude Code task finishes. When any Claude Code session on this Mac ends a long
 turn, echo-OS writes a one- or two-line headline with a small fast model and reads it aloud, prefixed
-by the session's call sign:
+by the project folder and the session's call sign:
 
-> *"Charlie. The billing refactor is done and all 42 tests pass."*
+> *"billing svc, Alpha. The billing refactor is done and all 42 tests pass."*
 
 - **One watcher for the whole machine.** Every interactive session gets a NATO call sign (Alpha,
-  Bravo, Charlie…) for as long as it runs.
+  Bravo, Charlie…) for as long as it runs, counted per project folder: two projects can each have
+  an Alpha, and a second session in the same folder is its Bravo. The project and call sign are
+  added by code, never by the model.
 - **Long turns only.** By default, at least 3 minutes and 5 tool calls.
 - **Optional KB context.** A separate agent decides whether your knowledge base (notes-kb) has
   something worth adding, and fetches it.

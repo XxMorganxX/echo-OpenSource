@@ -74,7 +74,7 @@ def make_pipeline(tmp_path):
         )
         pipeline = EchoPipeline(**parts, kb_enabled=kb_enabled, min_turn_seconds=180, min_tool_calls=5,
                                 max_job_age_seconds=600, tracked_entrypoints={"cli"},
-                                spoken_template="{call_sign}. {headline}")
+                                spoken_template="{project}, {call_sign}. {headline}")
         return pipeline, parts
     return _make
 
@@ -85,6 +85,25 @@ def hook(event, session_id="s1", **extra):
 
 def stop_job(path, session_id="s1"):
     return EchoJob(session_id=session_id, transcript_path=str(path), ended_at=T0.timestamp() + 405, queued_at=T0.timestamp() + 405)
+
+
+def test_project_names_are_spoken_as_words():
+    from echo_os.echo.pipeline import spoken_name
+    assert spoken_name("web-app") == "web app"
+    assert spoken_name("to-do_app") == "to do app"
+    assert spoken_name("echo-OS") == "echo OS"
+    assert spoken_name("") == ""
+
+
+def test_spoken_text_is_project_then_call_sign_then_headline():
+    from echo_os.echo.pipeline import spoken_text
+    template = "{project}, {call_sign}. {headline}"
+    assert spoken_text(template, project="web-app", call_sign="Bravo", headline="Done.") == "web app, Bravo. Done."
+
+
+def test_spoken_text_without_a_project_starts_with_the_call_sign():
+    from echo_os.echo.pipeline import spoken_text
+    assert spoken_text("{project}, {call_sign}. {headline}", project="", call_sign="Alpha", headline="Done.") == "Alpha. Done."
 
 
 def test_untracked_entrypoints_are_ignored(make_pipeline):
@@ -129,7 +148,7 @@ def test_long_turn_is_summarized_spoken_and_recorded(make_pipeline, write_transc
     pipeline, parts = make_pipeline(kb=kb)
     pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=None, now=1)
     echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
-    assert parts["announcer"].said == ["Alpha. Billing refactor done."]
+    assert parts["announcer"].said == ["billing svc, Alpha. Billing refactor done."]
     assert parts["headline_agent"].calls[0]["kb_context"].context == "Billing ships Friday."
     assert parts["headline_agent"].calls[0]["project"] == "billing-svc"
     stored = parts["history"].recent(5)[0]
@@ -200,7 +219,7 @@ def test_replay_speaks_a_stored_echo_again(make_pipeline, write_transcript):
     pipeline, parts = make_pipeline()
     echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
     assert pipeline.replay(echo.id) is True
-    assert parts["announcer"].said == ["Alpha. Billing refactor done."] * 2
+    assert parts["announcer"].said == ["Alpha. Billing refactor done."] * 2  # no SessionStart, so no project
     assert pipeline.replay("nope") is False
 
 
@@ -256,7 +275,7 @@ def test_questions_and_suggestions_reach_history_and_the_popup(make_pipeline, wr
     assert (stored["questions"], stored["suggestions"]) == (["Push to main?"], ["Add a test set"])
     announcement = parts["announcer"].announced[-1]
     assert (announcement.questions, announcement.suggestions) == (("Push to main?",), ("Add a test set",))
-    assert announcement.spoken_text == "Alpha. Done, with a question for you on screen."
+    assert announcement.spoken_text.endswith("Alpha. Done, with a question for you on screen.")
     pipeline.replay(echo.id)
     assert parts["announcer"].announced[-1].questions == ("Push to main?",)
 

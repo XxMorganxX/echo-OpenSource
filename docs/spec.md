@@ -5,8 +5,9 @@
 ## What it is
 
 When a Claude Code session on this Mac finishes a **long** turn, echo-OS reads the turn, writes a
-one- to two-line headline with a small fast model, and speaks it aloud, prefixed by the session's
-phonetic call sign: *"Charlie. Billing refactor is done and all 42 tests pass."*
+one- to two-line headline with a small fast model, and speaks it aloud, prefixed by the project
+folder and the session's phonetic call sign within that project: *"billing svc, Alpha. The billing
+refactor is done and all 42 tests pass."*
 
 One background process watches every Claude Code session on the machine. A tiny menu bar app shows
 the sessions, the recent echoes, and lets you edit the headline system prompt and mute speech.
@@ -48,7 +49,7 @@ summaries could bleed between sessions, and it needs reset logic, all to save ~1
 | D2 | Long-horizon gate: turn wall-clock ≥ `MIN_TURN_SECONDS` (180) **and** tool calls ≥ `MIN_TOOL_CALLS` (5). | Duration is what "I walked away" means; the tool floor screens out long thinking-only answers. Both in `settings.py`. |
 | D3 | Turn boundaries come from the transcript: the turn starts at the first human prompt after the previous `turn_duration`/`stop_hook_summary` record. Markers after the turn's last message are ignored, and messages typed mid-turn (`queued_command` attachments) join the ask. | Survives daemon restarts. Claude Code writes the current turn's own markers moments after the Stop hook, so they are usually present by the time the transcript is read and must not be taken as a turn boundary. |
 | D4 | Headless calls run `claude -p` with `--system-prompt`, `--tools ""`, `--strict-mcp-config`, `disableAllHooks`, `--no-session-persistence`, and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`. | Measured: the default context is 163k tokens ($0.16/call); stripped it is ~640 tokens ($0.001, ~3 s). Disabling hooks stops recursion and stops the user's own Stop hooks (notification sound) firing for background calls. |
-| D5 | Call signs: NATO alphabet (Alpha, Bravo, Charlie…), lowest free name; freed when the session ends or its `CLAUDE_PID` dies; a resumed session gets its old name back if free. Overflow → "Alpha 2". | Short, unambiguous when spoken. List lives in `settings.py`. "Alpha"/"Juliet" spellings because TTS reads them better than "Alfa"/"Juliett". |
+| D5 | Call signs: NATO alphabet (Alpha, Bravo, Charlie…), counted per working directory: the first session in each directory is its Alpha, the next its Bravo. Lowest free name in that directory; freed when the session ends or its `CLAUDE_PID` dies; a resumed session gets its old name back if free there. Overflow → "Alpha 2". The spoken prefix is `SPOKEN_TEMPLATE` = project folder (hyphens and underscores read as spaces), then call sign, then the headline, filled in by code; the headline prompt tells the model not to repeat them. | Short, unambiguous when spoken, and stable per project ("web app, Alpha"). No model is trusted with naming. List lives in `settings.py`. "Alpha"/"Juliet" spellings because TTS reads them better than "Alfa"/"Juliett". |
 | D6 | Only interactive sessions are tracked: `CLAUDE_CODE_ENTRYPOINT` (passed by the hook) in `cli`/`claude-desktop`. `sdk-cli` (headless `claude -p`, including echo-OS's own) is ignored. | Automation runs would otherwise claim call signs and chatter. |
 | D7 | The headline system prompt is a Markdown file, `echo_os/agents/headline/system_prompt.md`, re-read on every echo. The panel edits it in place. | Editable without restart, and git-tracked so prompt edits are versioned. |
 | D8 | The KB relevance agent is a separate headless call with only `search_memories` and `find_entity` from notes-kb, structured JSON output, a budget cap, and a timeout. It fails open: any error → no KB context. | Keeps the headline path alive when notes-kb is down or unauthenticated. The agent decides relevance itself and is told to skip tools for generic turns. |

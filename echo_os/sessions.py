@@ -1,9 +1,13 @@
 """Tracks every interactive Claude Code session on the machine and gives each a call sign.
 
+Call signs are counted per working directory: the first session in echo-OS and the first in
+web-app are both Alpha; a second session in web-app is its Bravo. Echoes say the project
+first, so "echo OS, Alpha" and "web app, Alpha" never clash.
+
 A call sign is held from a session's first hook event until it ends (SessionEnd, its process
-dies, or it goes quiet past the expiry). The lowest free sign is handed out first; a resumed
-session gets its previous sign back when that sign is free. State is persisted so names survive a
-daemon restart.
+dies, or it goes quiet past the expiry). The lowest sign free in that directory is handed out
+first; a resumed session gets its previous sign back when it is free there. State is persisted so
+names survive a daemon restart.
 
 Each working directory also gets a color slot, shown on its popups and in the panel. Sessions in
 the same directory share it; live directories never share one while a free slot exists. A
@@ -71,7 +75,7 @@ class SessionRegistry:
     def active(self) -> list[Session]:
         with self._lock:
             sessions = [s for s in self._sessions.values() if s.status != "ended"]
-        return sorted(sessions, key=lambda s: self._sign_order(s.call_sign))
+        return sorted(sessions, key=lambda s: (s.project.lower(), s.cwd, self._sign_order(s.call_sign)))
 
     # -- Events ----------------------------------------------------------------------------
     def touch(self, session_id: str, *, cwd: str, now: float, pid: int | None = None) -> Session:
@@ -80,9 +84,11 @@ class SessionRegistry:
             session = self._sessions.get(session_id)
             if session is None or session.status == "ended":
                 previous_sign = session.call_sign if session else None
+                # Revived without a directory (first seen at Stop after a restart): keep the old one.
+                cwd = cwd or (session.cwd if session else "")
                 session = Session(
                     session_id=session_id,
-                    call_sign=self._free_sign(preferred=previous_sign),
+                    call_sign=self._free_sign(cwd=cwd, preferred=previous_sign),
                     project=Path(cwd).name or cwd,
                     cwd=cwd,
                     pid=pid,
@@ -96,6 +102,7 @@ class SessionRegistry:
             if cwd and cwd != session.cwd:
                 session.cwd, session.project = cwd, Path(cwd).name or cwd
                 session.color = None
+                session.call_sign = self._free_sign(cwd=cwd, preferred=session.call_sign, exclude=session_id)
             if session.color is None:
                 session.color = self._directory_color(session)
             if pid:
@@ -148,8 +155,9 @@ class SessionRegistry:
                 session.last_event_at = now
                 self._save()
 
-    def _free_sign(self, *, preferred: str | None) -> str:
-        taken = {s.call_sign for s in self._sessions.values() if s.status != "ended"}
+    def _free_sign(self, *, cwd: str, preferred: str | None, exclude: str | None = None) -> str:
+        taken = {s.call_sign for s in self._sessions.values()
+                 if s.status != "ended" and s.cwd == cwd and s.session_id != exclude}
         if preferred and preferred not in taken:
             return preferred
         round_number = 1

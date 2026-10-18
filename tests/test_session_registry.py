@@ -7,10 +7,50 @@ def make(tmp_path, **kwargs):
     return SessionRegistry(tmp_path / "sessions.json", call_signs=SIGNS, **kwargs)
 
 
-def test_first_sessions_get_signs_in_order(tmp_path):
+def test_sessions_in_one_directory_get_signs_in_order(tmp_path):
     registry = make(tmp_path)
     assert registry.touch("s1", cwd="/x/proj-a", now=1).call_sign == "Alpha"
-    assert registry.touch("s2", cwd="/x/proj-b", now=2).call_sign == "Bravo"
+    assert registry.touch("s2", cwd="/x/proj-a", now=2).call_sign == "Bravo"
+
+
+def test_each_directory_counts_its_own_signs(tmp_path):
+    registry = make(tmp_path)
+    assert registry.touch("s1", cwd="/x/echo-OS", now=1).call_sign == "Alpha"
+    assert registry.touch("s2", cwd="/x/web-app", now=2).call_sign == "Alpha"
+    assert registry.touch("s3", cwd="/x/web-app", now=3).call_sign == "Bravo"
+
+
+def test_ending_a_session_frees_its_sign_only_in_its_directory(tmp_path):
+    registry = make(tmp_path)
+    registry.touch("s1", cwd="/x/a", now=1)
+    registry.touch("s2", cwd="/x/a", now=1)
+    registry.touch("s3", cwd="/x/b", now=1)
+    registry.end("s1")
+    assert registry.touch("s4", cwd="/x/b", now=2).call_sign == "Bravo"
+    assert registry.touch("s5", cwd="/x/a", now=2).call_sign == "Alpha"
+
+
+def test_moving_to_a_directory_where_the_sign_is_taken_picks_a_free_one(tmp_path):
+    registry = make(tmp_path)
+    registry.touch("s1", cwd="/x/a", now=1)
+    registry.touch("s2", cwd="/x/b", now=1)
+    assert registry.touch("s2", cwd="/x/a", now=2).call_sign == "Bravo"
+
+
+def test_a_session_revived_without_a_directory_keeps_its_old_one(tmp_path):
+    registry = make(tmp_path)
+    registry.touch("s1", cwd="/x/a", now=1)
+    registry.end("s1")
+    revived = registry.touch("s1", cwd="", now=2)
+    assert (revived.cwd, revived.project, revived.call_sign) == ("/x/a", "a", "Alpha")
+
+
+def test_active_sessions_are_listed_by_project_then_sign(tmp_path):
+    registry = make(tmp_path)
+    registry.touch("s1", cwd="/x/b", now=1)
+    registry.touch("s2", cwd="/x/a", now=1)
+    registry.touch("s3", cwd="/x/a", now=1)
+    assert [(s.project, s.call_sign) for s in registry.active()] == [("a", "Alpha"), ("a", "Bravo"), ("b", "Alpha")]
 
 
 def test_touching_a_known_session_keeps_its_sign(tmp_path):
