@@ -24,3 +24,8 @@ def test_older_records_without_server_status_still_detect_needs_login():
 
 def test_other_failures_read_as_unavailable():
     assert kb_usage_from_record({"relevant": False, "error": "timed out after 40s"}) == KbUsage("unavailable")
+
+
+def test_tools_that_failed_to_load_read_as_unavailable():
+    record = {"relevant": False, "sources": [], "error": "notes-kb tools unavailable", "server_status": "tools-failed"}
+    assert kb_usage_from_record(record) == KbUsage("unavailable")

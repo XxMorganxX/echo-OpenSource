@@ -22,9 +22,9 @@ class FakeProcess:
         return subprocess.CompletedProcess(argv, self.returncode, self.stdout, "boom")
 
 
-def ok_output(mcp_servers=(), **overrides):
+def ok_output(mcp_servers=(), tools=("StructuredOutput",), **overrides):
     """stream-json: an init line, an assistant line, then the result line."""
-    init = {"type": "system", "subtype": "init", "mcp_servers": list(mcp_servers)}
+    init = {"type": "system", "subtype": "init", "mcp_servers": list(mcp_servers), "tools": list(tools)}
     result = {"type": "result", "result": "Done.", "is_error": False, "total_cost_usd": 0.0012, "duration_ms": 2100}
     result.update(overrides)
     return "\n".join(json.dumps(line) for line in (init, {"type": "assistant"}, result)) + "\n"
@@ -104,3 +104,8 @@ def test_api_keys_are_dropped_like_the_users_shell_wrapper(tmp_path, monkeypatch
 def test_mcp_server_status_is_reported(tmp_path):
     fake = FakeProcess(ok_output(mcp_servers=[{"name": "notes-kb", "status": "needs-auth"}]))
     assert model(fake, tmp_path).run(request()).mcp_status == {"notes-kb": "needs-auth"}
+
+
+def test_reports_the_tools_the_call_actually_had(tmp_path):
+    fake = FakeProcess(ok_output(tools=["StructuredOutput", "mcp__notes-kb__search"]))
+    assert model(fake, tmp_path).run(request()).tools == ("StructuredOutput", "mcp__notes-kb__search")

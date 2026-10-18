@@ -38,6 +38,8 @@ class ModelResult:
     duration_ms: int
     # MCP server name -> connection status as the provider reported it ("connected", "needs-auth", ...).
     mcp_status: dict[str, str] = field(default_factory=dict)
+    # The tools the call actually had. An MCP server can connect yet fail to list its tools.
+    tools: tuple[str, ...] = ()
 
 
 class HeadlessModel(Protocol):
@@ -93,6 +95,7 @@ class ClaudeCodeHeadless:
                 for server in (init or {}).get("mcp_servers") or []
                 if isinstance(server, dict)
             },
+            tools=tuple(str(tool) for tool in (init or {}).get("tools") or []),
         )
 
     @staticmethod

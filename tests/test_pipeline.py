@@ -257,6 +257,9 @@ def test_kb_lookups_feed_the_auth_light(make_pipeline, write_transcript):
     observed = []
 
     class Monitor:
+        def snapshot(self):
+            return {"state": "unknown"}
+
         def observe(self, state):
             observed.append(state)
 
@@ -264,6 +267,37 @@ def test_kb_lookups_feed_the_auth_light(make_pipeline, write_transcript):
     pipeline.kb_monitor = Monitor()
     pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
     assert observed == ["needs-auth"]
+
+
+class StatusMonitor:
+    def __init__(self, state):
+        self.state, self.observed = state, []
+
+    def snapshot(self):
+        return {"state": self.state}
+
+    def observe(self, state):
+        self.observed.append(state)
+
+
+def test_a_known_kb_failure_skips_the_lookup_so_echoes_stay_fast(make_pipeline, write_transcript):
+    for state in ("needs-auth", "failed", "tools-failed"):
+        kb = FakeKb(KbLookup(KbContext("never used", ["x"])))
+        pipeline, parts = make_pipeline(kb=kb)
+        pipeline.kb_monitor = StatusMonitor(state)
+        echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+        assert kb.calls == 0, state
+        assert echo.kb["error"] == f"skipped: KB {state}" and echo.kb["server_status"] == state
+        assert parts["announcer"].said  # the echo itself still happens
+
+
+def test_a_healthy_or_unknown_kb_is_looked_up(make_pipeline, write_transcript):
+    for state in ("connected", "unknown", "checking", "missing", "pending"):
+        kb = FakeKb()
+        pipeline, _ = make_pipeline(kb=kb)
+        pipeline.kb_monitor = StatusMonitor(state)
+        pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+        assert kb.calls == 1, state
 
 
 def test_questions_and_suggestions_reach_history_and_the_popup(make_pipeline, write_transcript):

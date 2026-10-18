@@ -6,15 +6,16 @@ from echo_os.transcript import TurnDigest
 
 
 class FakeModel:
-    def __init__(self, structured=None, error=None, kb_status="connected"):
+    def __init__(self, structured=None, error=None, kb_status="connected", tools=None):
         self.structured, self.error, self.kb_status, self.requests = structured, error, kb_status, []
+        self.tools = tuple(tools) if tools is not None else ("StructuredOutput", "mcp__notes__search_notes")
 
     def run(self, request):
         self.requests.append(request)
         if self.error:
             raise self.error
         return ModelResult(text="", structured=self.structured, cost_usd=0.004, duration_ms=3000,
-                           mcp_status={CONNECTION.server_name: self.kb_status})
+                           mcp_status={CONNECTION.server_name: self.kb_status}, tools=self.tools)
 
 
 CONNECTION = KbConnection(server_name="notes", mcp_server={"type": "http", "url": "https://kb.example.com/mcp"},
@@ -99,3 +100,18 @@ def test_lookup_reports_the_server_status_it_saw():
     needs_auth = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []}, kb_status="needs-auth")).lookup(DIGEST, project="p")
     failed = KbRelevanceAgent(FakeModel(error=HeadlessModelError("timed out"))).lookup(DIGEST, project="p")
     assert (connected.server_status, needs_auth.server_status, failed.server_status) == ("connected", "needs-auth", None)
+
+
+def test_kb_tools_that_never_loaded_are_an_error_not_a_no():
+    """Seen live: the server connected but listing its tools timed out, so the model had nothing to
+    search with and answered "not relevant" on every echo."""
+    lookup = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []}, tools=["StructuredOutput"])).lookup(DIGEST, project="p")
+    assert lookup.context is None
+    assert lookup.error == "notes tools unavailable"
+    assert lookup.server_status == "tools-failed"
+
+
+def test_a_still_connecting_server_without_tools_reports_its_status():
+    lookup = KbRelevanceAgent(FakeModel({"relevant": False, "context": "", "sources": []}, kb_status="pending",
+                                        tools=["StructuredOutput"])).lookup(DIGEST, project="p")
+    assert (lookup.error, lookup.server_status) == ("notes pending", "pending")

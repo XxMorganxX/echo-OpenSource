@@ -17,6 +17,7 @@ from typing import Protocol
 
 from echo_os.agents.headline.agent import HeadlineAgent
 from echo_os.agents.kb_relevance.agent import KbLookup
+from echo_os.kb_status import UNUSABLE_STATES
 from echo_os.agents.shared.headless_model import HeadlessModelError
 from echo_os.agents.shared.text import truncate
 from echo_os.echo.announcer import Announcement
@@ -237,13 +238,18 @@ class EchoPipeline:
     def _lookup_kb(self, digest, *, project: str) -> KbLookup | None:
         if not self._kb_enabled:
             return None
-        lookup = self._kb_agent.lookup(digest, project=project)
+        known_state = self.kb_monitor.snapshot().get("state") if self.kb_monitor is not None else None
+        skipped = known_state in UNUSABLE_STATES
+        if skipped:
+            lookup = KbLookup(None, error=f"skipped: KB {known_state}", server_status=known_state)
+        else:
+            lookup = self._kb_agent.lookup(digest, project=project)
         with self._kb_status_lock:
             self._kb_status = {
                 "state": "error" if lookup.error else ("used" if lookup.context else "not relevant"),
                 "error": lookup.error, "at": time.time(),
             }
-        if lookup.server_status and self.kb_monitor is not None:
+        if lookup.server_status and self.kb_monitor is not None and not skipped:
             self.kb_monitor.observe(lookup.server_status)
         if lookup.error:
             logger.warning("KB agent failed open: %s", lookup.error)

@@ -48,8 +48,8 @@ button, textarea { font: inherit; }
 .kb-light[data-state="connected"] .kb-dot { background: var(--success); box-shadow: 0 0 6px rgba(63, 185, 80, 0.6); }
 .kb-light[data-state="needs-auth"] { color: var(--warning); }
 .kb-light[data-state="needs-auth"] .kb-dot { background: var(--warning); }
-.kb-light[data-state="failed"], .kb-light[data-state="missing"] { color: var(--danger); }
-.kb-light[data-state="failed"] .kb-dot, .kb-light[data-state="missing"] .kb-dot { background: var(--danger); }
+.kb-light[data-state="failed"], .kb-light[data-state="tools-failed"], .kb-light[data-state="missing"] { color: var(--danger); }
+.kb-light[data-state="failed"] .kb-dot, .kb-light[data-state="tools-failed"] .kb-dot, .kb-light[data-state="missing"] .kb-dot { background: var(--danger); }
 .kb-light[data-state="checking"] .kb-dot { animation: pulse 1s ease-in-out infinite; }
 .kb-light[data-state="disabled"] { opacity: 0.5; }
 

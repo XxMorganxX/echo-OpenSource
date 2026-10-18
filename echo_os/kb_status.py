@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Callable
 
 CHECK_TIMEOUT_SECONDS = 30
-STATUS_PATTERNS = (("Needs authentication", "needs-auth"), ("Connected", "connected"), ("Failed", "failed"))
+# Checked in order: "Connected · tools fetch failed" must not read as connected.
+STATUS_PATTERNS = (("tools fetch failed", "tools-failed"), ("Needs authentication", "needs-auth"),
+                   ("Connected", "connected"), ("Failed", "failed"))
+# States in which a lookup can't succeed. Echoes skip the lookup (and its wait, up to ~30 s for a
+# server that won't list its tools) until a check or a lookup sees the server healthy again.
+UNUSABLE_STATES = {"needs-auth", "failed", "tools-failed"}
 
 
 def parse_mcp_get(output: str) -> str:

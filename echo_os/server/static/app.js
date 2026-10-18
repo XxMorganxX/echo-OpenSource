@@ -117,6 +117,7 @@ const KB_LIGHT_TEXT = {
   connected: "Knowledge base connected",
   "needs-auth": "Knowledge base needs login: in Claude Code run /mcp, pick your KB server, then Authenticate",
   failed: "Knowledge base unreachable (its MCP server failed to connect)",
+  "tools-failed": "Knowledge base connects, but listing its tools failed or timed out: a problem on the KB server. Echoes skip it until it recovers",
   missing: "The KB server in kb.json isn't registered in Claude Code (status comes from lookups only)",
   disabled: "No knowledge base connected: copy kb.example.json to kb.json (or ECHO_OS_KB_AGENT is false)",
   checking: "Checking the knowledge base login…",

@@ -61,9 +61,14 @@ class KbRelevanceAgent:
             return KbLookup(context=None, error=str(exc))
 
         server_status = result.mcp_status.get(connection.server_name, "missing")
-        cost = dict(cost_usd=result.cost_usd, duration_ms=result.duration_ms, server_status=server_status)
+        cost = dict(cost_usd=result.cost_usd, duration_ms=result.duration_ms)
+        # If the model couldn't search, its "not relevant" would be meaningless. Report why instead.
+        if not set(connection.allowed_tools) & set(result.tools):
+            if server_status == "connected":  # connected, but listing its tools failed or timed out
+                return KbLookup(None, f"{connection.server_name} tools unavailable", server_status="tools-failed", **cost)
+            return KbLookup(None, f"{connection.server_name} {server_status}", server_status=server_status, **cost)
+        cost["server_status"] = server_status
         if server_status != "connected":
-            # The model can't search, so its "not relevant" would be meaningless. Report why.
             return KbLookup(None, f"{connection.server_name} {server_status}", **cost)
 
         answer = result.structured

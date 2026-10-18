@@ -40,6 +40,15 @@ def monitor(tmp_path, run, clock=lambda: 100.0):
                          run_process=run, clock=clock)
 
 
+def test_connected_but_tools_failed_is_a_failure_not_green():
+    assert parse_mcp_get("notes-kb:\n  Status: ! Connected · tools fetch failed\n  Type: http\n") == "tools-failed"
+
+
+def test_unusable_states_are_the_ones_a_lookup_cannot_succeed_in():
+    from echo_os.kb_status import UNUSABLE_STATES
+    assert UNUSABLE_STATES == {"needs-auth", "failed", "tools-failed"}
+
+
 def test_starts_unknown_until_checked(tmp_path):
     assert monitor(tmp_path, runner()).snapshot()["state"] == "unknown"
 
