@@ -115,10 +115,10 @@ function renderFooter(state) {
 
 const KB_LIGHT_TEXT = {
   connected: "Knowledge base connected",
-  "needs-auth": "Knowledge base needs login: in Claude Code run /mcp, pick notes-kb, then Authenticate",
-  failed: "Knowledge base unreachable (notes-kb failed to connect)",
-  missing: "notes-kb isn't configured in Claude Code",
-  disabled: "Knowledge base agent is turned off (ECHO_OS_KB_AGENT=false)",
+  "needs-auth": "Knowledge base needs login: in Claude Code run /mcp, pick your KB server, then Authenticate",
+  failed: "Knowledge base unreachable (its MCP server failed to connect)",
+  missing: "The KB server in kb.json isn't registered in Claude Code (status comes from lookups only)",
+  disabled: "No knowledge base connected: copy kb.example.json to kb.json (or ECHO_OS_KB_AGENT is false)",
   checking: "Checking the knowledge base login…",
   unknown: "Knowledge base status not checked yet",
 };

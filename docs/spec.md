@@ -1,6 +1,6 @@
 # echo-OS — spec
 
-**Status:** v1, 2026-10-16. Working log: [tasks/build-echo-os.md](../tasks/build-echo-os.md).
+**Status:** v1, 2026-10-16.
 
 ## What it is
 
@@ -23,16 +23,16 @@ Claude Code session (any)                     echo-OS daemon (one launchd agent)
                                              ├─ SessionRegistry   call signs, status, liveness
                                              ├─ EchoWorker (one queue, one job at a time)
                                              │    transcript → TurnDigest → long-horizon gate
-                                             │    → KB relevance agent (notes-kb, optional)
+                                             │    → KB relevance agent (your MCP KB, optional)
                                              │    → headline agent → history
                                              ├─ Announcer (one queue: popup + speech, one at a time)
                                              └─ menu bar status item + WKWebView panel + popups
 ```
 
-Same framework as the to-do app (`an existing menu bar app`): Python 3.13, PyObjC menu bar app with a
-borderless floating `WKWebView` panel, the panel's HTML/JS served by an embedded stdlib
-`ThreadingHTTPServer` that also exposes a JSON API, one per-user launchd agent, a bash control script,
-and a Daemon Deck registry manifest.
+Python 3.13, a PyObjC menu bar app with a borderless floating `WKWebView` panel, the panel's HTML/JS
+served by an embedded stdlib `ThreadingHTTPServer` that also exposes a JSON API, one per-user launchd
+agent, and a bash control script. If `~/.config/background-systems/registry/` exists, install also
+writes Daemon Deck registry manifests (a menu bar index of background jobs); otherwise that step is skipped.
 
 ### "One background session"
 
@@ -52,12 +52,13 @@ summaries could bleed between sessions, and it needs reset logic, all to save ~1
 | D5 | Call signs: NATO alphabet (Alpha, Bravo, Charlie…), counted per working directory: the first session in each directory is its Alpha, the next its Bravo. Lowest free name in that directory; freed when the session ends or its `CLAUDE_PID` dies; a resumed session gets its old name back if free there. Overflow → "Alpha 2". The spoken prefix is `SPOKEN_TEMPLATE` = project folder (hyphens and underscores read as spaces), then call sign, then the headline, filled in by code; the headline prompt tells the model not to repeat them. | Short, unambiguous when spoken, and stable per project ("web app, Alpha"). No model is trusted with naming. List lives in `settings.py`. "Alpha"/"Juliet" spellings because TTS reads them better than "Alfa"/"Juliett". |
 | D6 | Only interactive sessions are tracked: `CLAUDE_CODE_ENTRYPOINT` (passed by the hook) in `cli`/`claude-desktop`. `sdk-cli` (headless `claude -p`, including echo-OS's own) is ignored. | Automation runs would otherwise claim call signs and chatter. |
 | D7 | The headline system prompt is a Markdown file, `echo_os/agents/headline/system_prompt.md`, re-read on every echo. The panel edits it in place. | Editable without restart, and git-tracked so prompt edits are versioned. |
-| D8 | The KB relevance agent is a separate headless call with only `search_memories` and `find_entity` from notes-kb, structured JSON output, a budget cap, and a timeout. It fails open: any error → no KB context. | Keeps the headline path alive when notes-kb is down or unauthenticated. The agent decides relevance itself and is told to skip tools for generic turns. |
+| D8 | The KB relevance agent is a separate headless call that sees only the tools named in your knowledge-base connection, with structured JSON output, a budget cap, and a timeout. It fails open: any error → no KB context. | Keeps the headline path alive when the KB is down or logged out. The agent decides relevance itself and is told to skip tools for generic turns. |
+| D19 | Bring your own knowledge base. The connection lives in a local, gitignored `kb.json` (path override `ECHO_OS_KB_CONFIG`; template `kb.example.json`): an MCP server name, its Claude Code MCP config (http, sse or stdio), the tools the agent may call, a sentence on what the KB holds, and optional extra instructions that are appended to the system prompt. No `kb.json` → the KB agent is off. A non-MCP source can replace the agent by implementing `KnowledgeLookup.lookup(digest, project) -> KbLookup`. | The repo is public; whoever runs it supplies their own KB, and nothing about one person's KB (URL, tool names, how to read its results) ships in code. MCP covers most KBs with zero code; the protocol covers the rest. |
 | D9 | Voice behind a `VoiceOutput` contract. Default `macos-say` (no setup); `openai` (gpt-4o-mini-tts → `afplay`) when selected and `OPENAI_API_KEY` is set. | TTS is the most likely provider to change. `say` works on day one. |
 | D10 | Model behind a `HeadlessModel` contract; v1 implementation is Claude Code headless with `claude-haiku-5-5`. | The user asked for a background Claude Code session; the contract leaves room for a direct API call later. |
 | D12 | Every voice message goes through one `Announcer` queue in the app: echoes, replays, `POST /api/speak` and `./echoctl say`. Mute is checked at play time. | Nothing ever talks over anything else, and other bots can join the same queue instead of calling a voice directly. |
 | D13 | Each announcement shows a top-right popup card (native `NSPanel`, panel colors) at the moment its speech starts; cards stack, stay up for reading time (6–20 s) and open the panel on click. Popups still show when muted. The footer shows KB usage for that echo: "KB · N notes" (used), "nothing relevant", "needs login", "unavailable" or "KB off", each with its own icon and color; `/api/speak` messages have none. | Lets you read what was said; muting turns echoes into read-only. A native window avoids Notification Center grouping and Focus modes. |
-| D14 | The panel header has a KB light (green connected, amber needs login, red unreachable, gray unknown/off). Sources: `claude mcp get notes-kb` at startup, every 5 min and on click (no model call, ~3 s), plus the server status every KB lookup reports. | An expired notes-kb login otherwise shows up only as quietly worse headlines. Lookups catch it the moment an echo hits it; the timer catches it between echoes. |
+| D14 | The panel header has a KB light (green connected, amber needs login, red unreachable, gray unknown/off). Sources: `claude mcp get <server>` at startup, every 5 min and on click (no model call, ~3 s), plus the server status every KB lookup reports. | An expired KB login otherwise shows up only as quietly worse headlines. Lookups catch it the moment an echo hits it; the timer catches it between echoes. |
 | D15 | The headline agent returns structured output: `headline` (spoken) plus `questions` and `suggestions` (shown as bullets on the popup and panel, never spoken). The headline answers a direct question first ("Yes, …") and points to the screen when there are items ("…two questions for you on screen"). Items come only from the agent's final response. | You hear the gist and read the details; questions don't get lost in speech. |
 | D16 | Cards with questions or suggestions are sticky: no timer; they close on their ✕, when you send that session your next prompt (`UserPromptSubmit`), or when it ends (`SessionEnd`). Clicking a sticky card opens the panel and leaves it up. Plain cards still fade. | A question should stay in view until you've dealt with it; replying to the session is the natural "answered" signal. |
 | D17 | Each working directory gets a color slot from the session registry: sessions in one directory share it, live directories never share one while any of the 8 is free, and the preferred slot is a hash of the path so a project usually keeps its color. Cards are tinted in it (fill, border, left stripe, call-sign pill); the panel colors call signs to match. The palette is `DIRECTORY_COLORS` in `settings.py`. Cards also show a speaking indicator (animated waveform while the voice plays, speaker-slash when muted; the announcer tells the popup when speech ends), a footer with turn length, tool count, finish time and KB status, and, on plain cards, a draining countdown bar. | Several projects echo into one corner; color tells them apart before reading. Hash-only colors would collide among 8 slots; allocation alone would reshuffle colors daily. |
@@ -81,7 +82,7 @@ fields used: `hook_event_name`, `session_id`, `transcript_path`, `cwd`, `source`
 | GET | `/api/state` | sessions, recent echoes, mute flag, KB status, thresholds |
 | GET/PUT | `/api/prompt` | read / replace the headline system prompt |
 | POST | `/api/mute` | `{"muted": bool}` |
-| POST | `/api/kb/check` | re-check notes-kb's login now; returns the light's state |
+| POST | `/api/kb/check` | re-check the KB server's login now; returns the light's state |
 | POST | `/api/speak` | `{"text": str, "title"?: str}`: queue a voice message (202) |
 | POST | `/api/echoes/<id>/replay` | speak an echo again |
 
@@ -95,9 +96,16 @@ Two target agents, each documented by the six-component spec in its own director
 
 Shared model plumbing lives in `echo_os/agents/shared/`.
 
+## What stays private
+
+Everything personal is local and gitignored: `kb.json` (your KB connection), `.env` (overrides such
+as a launchd label), and `state/` (call signs, echo history with transcript excerpts, preferences).
+Echo content never leaves the machine except to the model (through your Claude Code login) and, for
+KB lookups, as search queries to your own KB server.
+
 ## Out of scope (v1)
 
 - Echoing subagent completions (`SubagentStop`) or headless sessions.
 - Remote machines; everything is localhost.
 - Interrupting speech when you return to the terminal.
-- A fallback to grepping the local vault when notes-kb is unavailable.
+- A fallback to grepping a local notes folder when the KB server is unavailable.

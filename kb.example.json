@@ -1,0 +1,10 @@
+{
+  "server_name": "notes",
+  "mcp_server": {
+    "type": "http",
+    "url": "https://your-kb.example.com/mcp"
+  },
+  "tools": ["search_notes"],
+  "about": "Notes on my projects, the products and clients they're for, and the people I work with.",
+  "instructions": "Search by project or product name first. Use only results that clearly match."
+}

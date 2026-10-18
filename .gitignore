@@ -1,6 +1,11 @@
-# Secrets
+# Secrets and personal config
 .env
 .env.local
+# Your knowledge-base connection (copy kb.example.json)
+kb.json
+
+# Private working logs
+tasks/
 
 # Runtime state: session call signs, echo history (contains transcript excerpts), temp audio
 state/

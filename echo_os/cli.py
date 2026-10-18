@@ -17,7 +17,8 @@ from pathlib import Path
 
 from echo_os import settings
 from echo_os.agents.headline.agent import HeadlineAgent
-from echo_os.agents.kb_relevance.agent import KbRelevanceAgent
+from echo_os.agents.kb_relevance.agent import KbLookup, KbRelevanceAgent
+from echo_os.app import kb_connection_from_settings
 from echo_os.agents.shared.headless_model import ClaudeCodeHeadless
 from echo_os.transcript import is_long_horizon, read_last_turn
 
@@ -64,7 +65,12 @@ def main() -> None:
                                child_env_flag=settings.CHILD_ENV_FLAG)
     digest = _digest(args.transcript)
     project = args.project or Path(args.transcript).parent.name
-    kb = KbRelevanceAgent(model).lookup(digest, project=project)
+    connection = kb_connection_from_settings()
+    if connection is None:
+        print(f"No knowledge base: {settings.KB_CONFIG_PATH} is missing, invalid or switched off.", file=sys.stderr)
+        kb = KbLookup(None, "no knowledge base")
+    else:
+        kb = KbRelevanceAgent(model, connection).lookup(digest, project=project)
     print(json.dumps({"kb_context": kb.context.context if kb.context else None,
                       "kb_sources": kb.context.sources if kb.context else [],
                       "kb_error": kb.error, "kb_cost_usd": kb.cost_usd, "kb_ms": kb.duration_ms}, indent=2))

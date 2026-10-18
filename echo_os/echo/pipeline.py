@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 from echo_os.agents.headline.agent import HeadlineAgent
-from echo_os.agents.kb_relevance.agent import KbLookup, KbRelevanceAgent
+from echo_os.agents.kb_relevance.agent import KbLookup
 from echo_os.agents.shared.headless_model import HeadlessModelError
 from echo_os.agents.shared.text import truncate
 from echo_os.echo.announcer import Announcement
@@ -24,11 +24,19 @@ from echo_os.echo.history import EchoHistory
 from echo_os.echo.kb_usage import kb_usage_from_record
 from echo_os.echo.preferences import Preferences
 from echo_os.sessions import SessionRegistry
-from echo_os.transcript import is_long_horizon, read_last_turn
+from echo_os.transcript import is_long_horizon, read_last_turn, TurnDigest
 
 logger = logging.getLogger(__name__)
 
 STORED_ASK_CHARS = 300
+
+
+class KnowledgeLookup(Protocol):
+    """Where KB context comes from. The default is KbRelevanceAgent (any MCP server, via kb.json);
+    to use something else (a local notes folder, a database, an HTTP API), implement this and pass it
+    as `kb_agent` in app.build_app. Fail open: return KbLookup(None, error=...) instead of raising."""
+
+    def lookup(self, digest: TurnDigest, *, project: str) -> KbLookup: ...
 
 
 class AnnouncementQueue(Protocol):
@@ -85,7 +93,7 @@ class EchoPipeline:
         *,
         registry: SessionRegistry,
         headline_agent: HeadlineAgent,
-        kb_agent: KbRelevanceAgent,
+        kb_agent: KnowledgeLookup | None,
         announcer: AnnouncementQueue,
         history: EchoHistory,
         preferences: Preferences,

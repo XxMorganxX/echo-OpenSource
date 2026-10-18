@@ -65,8 +65,12 @@ TRANSCRIPT_SETTLE_SECONDS = 1.5
 MAX_JOB_AGE_SECONDS = 10 * 60
 
 # -- Pipeline ------------------------------------------------------------------------
+# Your knowledge-base connection (an MCP server): local and gitignored. Copy kb.example.json to
+# kb.json to turn the KB agent on; without the file it stays off. See the README.
+KB_CONFIG_PATH = Path(os.environ.get("ECHO_OS_KB_CONFIG", str(APP_ROOT / "kb.json"))).expanduser()
+# Master switch: false keeps the KB agent off even when kb.json exists.
 KB_AGENT_ENABLED = os.environ.get("ECHO_OS_KB_AGENT", "true").lower() == "true"
-# How often the panel's KB light re-checks notes-kb's login (`claude mcp get`, no model call).
+# How often the panel's KB light re-checks the KB server's login (`claude mcp get`, no model call).
 KB_STATUS_CHECK_SECONDS = 5 * 60
 # Spoken text: project folder (as words), then the session's call sign within that project, then the
 # model's headline. The first two are filled in by code, never by a model.

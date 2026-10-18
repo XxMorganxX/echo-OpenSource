@@ -108,10 +108,10 @@ KB_STATUS = {
     "used": ("book.fill", ACCENT, "KB · {notes}", "Informed by your knowledge base ({notes})"),
     "not-relevant": ("book", MUTED, "KB · nothing relevant", "Knowledge base searched; nothing relevant"),
     "needs-auth": ("lock.fill", WARNING, "KB · needs login",
-                   "notes-kb needs login: in Claude Code run /mcp, pick notes-kb, Authenticate"),
+                   "Knowledge base needs login: in Claude Code run /mcp, pick your KB server, Authenticate"),
     "unavailable": ("exclamationmark.triangle.fill", WARNING, "KB · unavailable",
                     "Knowledge base lookup failed (see echo-OS log)"),
-    "off": ("book", MUTED.colorWithAlphaComponent_(0.6), "KB off", "Knowledge base agent is turned off"),
+    "off": ("book", MUTED.colorWithAlphaComponent_(0.6), "KB off", "No knowledge base connected (see kb.example.json)"),
 }
 
 # Header indicator for the voice: (SF Symbol, tooltip) per state. "speaking" animates until speech ends.

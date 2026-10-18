@@ -41,9 +41,9 @@ def test_each_kb_state_has_its_own_label_and_tooltip():
         KbUsage("used", notes=2): ("KB · 2 notes", "Informed by your knowledge base (2 notes)"),
         KbUsage("used", notes=1): ("KB · 1 note", "Informed by your knowledge base (1 note)"),
         KbUsage("not-relevant"): ("KB · nothing relevant", "Knowledge base searched; nothing relevant"),
-        KbUsage("needs-auth"): ("KB · needs login", "notes-kb needs login: in Claude Code run /mcp, pick notes-kb, Authenticate"),
+        KbUsage("needs-auth"): ("KB · needs login", "Knowledge base needs login: in Claude Code run /mcp, pick your KB server, Authenticate"),
         KbUsage("unavailable"): ("KB · unavailable", "Knowledge base lookup failed (see echo-OS log)"),
-        KbUsage("off"): ("KB off", "Knowledge base agent is turned off"),
+        KbUsage("off"): ("KB off", "No knowledge base connected (see kb.example.json)"),
     }
     for usage, (label, tooltip) in expected.items():
         icons, labels = _kb_status(card_with(usage))

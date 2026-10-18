@@ -1,4 +1,4 @@
-"""Whether notes-kb is logged in, for the panel's status light.
+"""Whether your knowledge-base server is logged in, for the panel's status light.
 
 Two sources: `claude mcp get <server>` (no model call, ~3 s) run at startup, on a timer and on
 demand; and the server status every KB lookup reports, which catches an expired login the moment
@@ -53,6 +53,11 @@ class KbAuthMonitor:
             state = parse_mcp_get((completed.stdout or "") + (completed.stderr or ""))
         except (OSError, subprocess.TimeoutExpired):
             state = "unknown"
+        with self._lock:
+            # A server attached only through kb.json isn't registered in Claude Code, so `mcp get`
+            # can't see it; what the last lookup saw is the better answer then.
+            if state == "missing" and self._source == "kb lookup":
+                return
         self._set(state, "check")
 
     def observe(self, state: str) -> None:

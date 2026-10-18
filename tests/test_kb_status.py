@@ -63,3 +63,18 @@ def test_observations_from_kb_lookups_update_the_light(tmp_path):
     m.check()
     m.observe("needs-auth")
     assert m.snapshot() == {"state": "needs-auth", "checked_at": 100.0, "source": "kb lookup"}
+
+
+def test_a_server_unknown_to_claude_code_keeps_the_status_lookups_saw(tmp_path):
+    """Servers attached only through kb.json aren't registered in Claude Code, so `mcp get` says
+    missing; the status the last lookup saw is the better answer."""
+    m = monitor(tmp_path, runner('No MCP server named "notes-kb". Configured servers: x'))
+    m.observe("connected")
+    m.check()
+    assert m.snapshot()["state"] == "connected"
+
+
+def test_missing_with_no_lookup_yet_reads_as_missing(tmp_path):
+    m = monitor(tmp_path, runner('No MCP server named "notes-kb". Configured servers: x'))
+    m.check()
+    assert m.snapshot()["state"] == "missing"

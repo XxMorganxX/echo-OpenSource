@@ -8,6 +8,14 @@ version = "0.1.0"
 description = "Speaks a one-line headline when a long Claude Code turn finishes, with a tiny macOS menu bar app."
 readme = "README.md"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["claude-code", "hooks", "text-to-speech", "macos", "menu-bar"]
+classifiers = [
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: MacOS X :: Cocoa",
+]
 
 [tool.setuptools.packages.find]
 include = ["echo_os*"]
