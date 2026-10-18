@@ -34,21 +34,38 @@ Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 
 ## Requirements
 
-- macOS 14 or later, Python 3.13
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI (`claude`), logged in. echo-OS
-  makes its model calls through it.
+- macOS 14 or later.
+- Python 3.13. With Homebrew: `brew install python@3.13`.
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI (`claude`), logged in: run
+  `claude` once and sign in. echo-OS makes its model calls through it, on your plan.
 - Optional: an MCP server for your knowledge base.
 - Optional: `OPENAI_API_KEY` for the OpenAI voice (the default is macOS `say`, no setup).
 
 ## Setup
 
 ```bash
+git clone https://github.com/XxMorganxX/echo-OpenSource.git echo-os
+cd echo-os
 python3.13 -m venv venv
 ./venv/bin/pip install -r requirements.txt -e .
-./echoctl test        # run the test suite
-./echoctl install     # launchd agent + Claude Code hooks
-./echoctl say "Voice check."   # queued through the running app
+./echoctl test        # optional: run the test suite (no model calls, no sound)
+./echoctl install     # start the menu bar app at login + add the Claude Code hooks
 ```
+
+The virtualenv must be `./venv`: `echoctl` and the background agent run from it. `install` records
+this folder's path, so if you move the folder, run `./echoctl install` again.
+
+### Check it works
+
+1. **Echo** appears in the menu bar, and `./echoctl status` prints `running` and a health line.
+2. `./echoctl say "Voice check."` speaks and shows a card in the top-right corner.
+3. The model calls work through your Claude login:
+   `./echoctl headline "$(ls -t ~/.claude/projects/*/*.jsonl | head -1)"` prints a headline for your
+   most recent session (it isn't spoken).
+4. Open a **new** Claude Code session; sessions that were already running don't load the new hooks.
+   Echoes come only after long turns (3 minutes and 5 tool calls). To see one now, put
+   `ECHO_OS_MIN_TURN_SECONDS=0` and `ECHO_OS_MIN_TOOL_CALLS=0` in `.env`, run `./echoctl restart`, and
+   give Claude any small task. Remove both lines afterwards.
 
 `install` does the following:
 
@@ -123,6 +140,24 @@ Anything else that wants to talk can join the queue:
 curl -X POST localhost:8431/api/speak -H 'Content-Type: application/json' \
   -d '{"text": "Deploy finished.", "title": "CI"}'
 ```
+
+## Troubleshooting
+
+`./echoctl logs` shows what the agent is doing; most problems name themselves there.
+
+- **No echo after a long task.** Was the session started after `install`? Running sessions don't pick
+  up new hooks. Check that `./echoctl status` says `running`.
+- **Echoes fail with `could not start claude`.** The agent doesn't use your shell's PATH, only the
+  one in its plist (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and the system folders).
+  `install` warns about this. Put the full path in `.env`, e.g.
+  `ECHO_OS_CLAUDE_BINARY=/path/to/claude` (find it with `whence -p claude` in zsh), then
+  `./echoctl restart`.
+- **Headline calls fail with a login error.** Run `claude` in a terminal and sign in again.
+- **Nothing is spoken.** Check that `say hello` works in a terminal, the volume, and that the menu
+  bar app isn't muted.
+- **Port 8431 is taken.** Set `ECHO_OS_PORT` in `.env` and run `./echoctl install` again.
+- **KB light is red or yellow.** Hover over it to see why; click it to re-check. Most often the server needs a login: `/mcp` in
+  Claude Code → your server → Authenticate.
 
 ## Cost and privacy
 

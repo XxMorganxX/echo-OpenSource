@@ -6,6 +6,12 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${APP_DIR}/venv/bin/python"
 DOMAIN="gui/$(id -u)"
 
+if [ ! -x "$PYTHON" ]; then
+    echo "No virtualenv at ${APP_DIR}/venv. Set it up first (see README, Setup):" >&2
+    echo "  python3.13 -m venv venv && ./venv/bin/pip install -r requirements.txt -e ." >&2
+    exit 1
+fi
+
 # Label, notification names and port come from echo_os/settings.py (and .env).
 setting() { "$PYTHON" -c "from echo_os import settings; print(settings.$1)"; }
 LABEL="$(setting LAUNCHD_LABEL)"
@@ -29,6 +35,18 @@ render() {
         -e "s|{{PORT}}|${PORT}|g" \
         -e "s|{{LOG_FILE}}|${LOG_FILE}|g" \
         -e "s|{{TODAY}}|$(date +%F)|g" "$1"
+}
+
+# The agent runs with the PATH set in its plist, not your shell's. Warn at install if `claude` isn't on it,
+# since every headline is a `claude -p` call.
+check_claude_binary() {
+    local binary agent_path
+    binary="$(setting CLAUDE_BINARY)"
+    agent_path="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$PLIST_DST")"
+    if ! PATH="$agent_path" command -v "$binary" >/dev/null; then
+        echo "Warning: the agent can't find '${binary}' on its PATH (${agent_path})." >&2
+        echo "  Set ECHO_OS_CLAUDE_BINARY in .env to the full path of claude, then ./echoctl restart." >&2
+    fi
 }
 
 post_notification() {
@@ -59,6 +77,7 @@ case "${1:-}" in
         fi
         launchctl bootstrap "$DOMAIN" "$PLIST_DST"
         "$PYTHON" -m echo_os.hook_install install
+        check_claude_binary
         echo "Installed and started ${LABEL}. New Claude Code sessions pick up the hooks."
         ;;
     uninstall)
