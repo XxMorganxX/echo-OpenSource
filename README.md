@@ -46,14 +46,15 @@ Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 ```bash
 git clone https://github.com/XxMorganxX/echo-OpenSource.git echo-os
 cd echo-os
-python3.13 -m venv venv
-./venv/bin/pip install -r requirements.txt -e .
-./echoctl test        # optional: run the test suite (no model calls, no sound)
+./setup.sh            # checks prerequisites, creates ./venv, installs, runs the tests
 ./echoctl install     # start the menu bar app at login + add the Claude Code hooks
 ```
 
-The virtualenv must be `./venv`: `echoctl` and the background agent run from it. `install` records
-this folder's path, so if you move the folder, run `./echoctl install` again.
+`setup.sh` changes nothing outside this folder; `install` is the step that touches your Mac
+(below). To do setup by hand instead: `python3.13 -m venv venv` then
+`./venv/bin/pip install -r requirements.txt -e .`. The virtualenv must be `./venv`: `echoctl` and
+the background agent run from it. `install` records this folder's path, so if you move the folder,
+run `./echoctl install` again.
 
 ### Check it works
 
@@ -180,6 +181,17 @@ curl -X POST localhost:8431/api/speak -H 'Content-Type: application/json' \
 ```
 
 The tests need macOS (the popup tests build real AppKit views) but never call a model or speak.
+Before pushing, `./scripts/check-publication.sh` checks that no secret or private file is in git;
+`--install-hook` makes git run it on every push. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Using with Claude Code
+
+This repo has a [`CLAUDE.md`](CLAUDE.md) with its commands, architecture and rules. Run `claude` in
+the repo and it's read automatically.
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
