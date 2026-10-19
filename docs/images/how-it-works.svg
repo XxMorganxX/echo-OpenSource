@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" width="1000" height="400" role="img" aria-labelledby="title desc">
+  <title id="title">How echo-OS works</title>
+  <desc id="desc">Claude Code hooks post each session event to a local daemon. The daemon assigns call signs and checks the length gate. One worker runs the optional KB relevance agent and the headline agent, then queues the headline. A single speech queue speaks it and shows a popup card. The menu bar panel reads the daemon's state.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .column { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; fill: #8b949e; }
+      .name { font-size: 14px; font-weight: 600; fill: #f0f6fc; }
+      .note { font-size: 12px; fill: #8b949e; }
+      .edge { font-size: 11px; fill: #8b949e; }
+      .group { fill: #161b22; stroke: rgba(255,255,255,0.18); }
+      .box { fill: #1c2330; stroke: rgba(255,255,255,0.22); }
+      .line { stroke: #8b949e; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="999" height="399" rx="16" fill="#0d1117" stroke="rgba(255,255,255,0.12)"/>
+
+  <!-- Column labels -->
+  <text class="column" x="30" y="40">YOUR SESSIONS</text>
+  <text class="column" x="250" y="40">DAEMON · 127.0.0.1</text>
+  <text class="column" x="490" y="40">ONE WORKER</text>
+  <text class="column" x="760" y="40">ONE SPEECH QUEUE</text>
+
+  <!-- Claude Code sessions, each with its call sign and folder color -->
+  <g>
+    <rect class="box" x="30" y="60" width="170" height="48" rx="9"/>
+    <rect x="30" y="60" width="4" height="48" rx="2" fill="#58a6ff"/>
+    <text class="name" x="46" y="89" fill="#58a6ff" style="fill:#58a6ff">Alpha</text>
+    <text class="note" x="96" y="89">billing-svc</text>
+
+    <rect class="box" x="30" y="120" width="170" height="48" rx="9"/>
+    <rect x="30" y="120" width="4" height="48" rx="2" fill="#58a6ff"/>
+    <text class="name" x="46" y="149" style="fill:#58a6ff">Bravo</text>
+    <text class="note" x="96" y="149">billing-svc</text>
+
+    <rect class="box" x="30" y="180" width="170" height="48" rx="9"/>
+    <rect x="30" y="180" width="4" height="48" rx="2" fill="#3fb950"/>
+    <text class="name" x="46" y="209" style="fill:#3fb950">Alpha</text>
+    <text class="note" x="96" y="209">web-app</text>
+
+    <text class="note" x="30" y="254">Claude Code, any folder</text>
+  </g>
+
+  <!-- Hooks into the daemon -->
+  <path class="line" d="M200,144 L248,144" marker-end="url(#arrow)"/>
+  <text class="edge" x="206" y="136">hooks</text>
+
+  <!-- Daemon -->
+  <rect class="group" x="250" y="60" width="200" height="168" rx="12"/>
+  <rect class="box" x="264" y="74" width="172" height="58" rx="9"/>
+  <text class="name" x="278" y="99">Session registry</text>
+  <text class="note" x="278" y="118">call signs per folder</text>
+  <path class="line" d="M350,132 L350,154" marker-end="url(#arrow)"/>
+  <rect class="box" x="264" y="156" width="172" height="58" rx="9"/>
+  <text class="name" x="278" y="181">Length gate</text>
+  <text class="note" x="278" y="200">≥ 3 min and ≥ 5 tools</text>
+
+  <!-- Gate into the worker -->
+  <path class="line" d="M436,185 L488,185" marker-end="url(#arrow)"/>
+
+  <!-- Worker: two headless claude -p calls -->
+  <rect class="group" x="490" y="60" width="220" height="168" rx="12"/>
+  <rect class="box" x="504" y="74" width="192" height="58" rx="9" stroke-dasharray="5 4"/>
+  <text class="name" x="518" y="99">KB relevance agent</text>
+  <text class="note" x="518" y="118">optional · your MCP server</text>
+  <path class="line" d="M600,132 L600,154" marker-end="url(#arrow)"/>
+  <rect class="box" x="504" y="156" width="192" height="58" rx="9"/>
+  <text class="name" x="518" y="181">Headline agent</text>
+  <text class="note" x="518" y="200">claude -p · Haiku</text>
+
+  <!-- Headline into the speech queue -->
+  <path class="line" d="M696,185 L728,185 L728,158 L758,158" marker-end="url(#arrow)"/>
+
+  <!-- Other tools can speak too -->
+  <rect class="box" x="760" y="60" width="210" height="44" rx="9"/>
+  <text class="note" x="776" y="87">other tools · POST /api/speak</text>
+  <path class="line" d="M865,104 L865,128" marker-end="url(#arrow)"/>
+
+  <!-- Speech queue and its two outputs -->
+  <rect class="group" x="760" y="130" width="210" height="56" rx="12"/>
+  <text class="name" x="776" y="154">Speech queue</text>
+  <text class="note" x="776" y="173">one voice at a time</text>
+  <path class="line" d="M810,186 L810,240" marker-end="url(#arrow)"/>
+  <path class="line" d="M920,186 L920,240" marker-end="url(#arrow)"/>
+  <rect class="box" x="760" y="242" width="100" height="58" rx="9"/>
+  <text class="name" x="774" y="267">Voice</text>
+  <text class="note" x="774" y="286">say · OpenAI</text>
+  <rect class="box" x="870" y="242" width="100" height="58" rx="9"/>
+  <text class="name" x="884" y="267">Popup card</text>
+  <text class="note" x="884" y="286">while spoken</text>
+
+  <!-- Menu bar panel reads the daemon's state -->
+  <rect class="box" x="250" y="300" width="200" height="58" rx="9"/>
+  <text class="name" x="264" y="325">Menu bar panel</text>
+  <text class="note" x="264" y="344">sessions, echoes, mute</text>
+  <path class="line" d="M350,298 L350,230" marker-end="url(#arrow)" stroke-dasharray="4 4"/>
+  <text class="edge" x="358" y="268">GET /api/state</text>
+
+  <!-- Short turns never reach a model -->
+  <text class="note" x="490" y="256">Short turns never reach a model.</text>
+  <text class="note" x="490" y="275">Headless sessions are ignored.</text>
+</svg>

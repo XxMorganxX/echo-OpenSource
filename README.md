@@ -6,6 +6,8 @@ prefixed by the project folder and the session's call sign:
 
 > *"billing svc, Alpha. The billing refactor is done and all 42 tests pass."*
 
+![The echo-OS panel open under its menu bar item, with three popup cards stacked in the top-right corner](docs/images/hero.png)
+
 - **One watcher for the whole machine.** Every interactive session gets a NATO call sign (Alpha,
   Bravo, Charlie…) for as long as it runs, counted per project folder: two projects can each have
   an Alpha, and a second session in the same folder is its Bravo. The project and call sign are
@@ -16,9 +18,16 @@ prefixed by the project folder and the session's call sign:
   [Connect your own knowledge base](#connect-your-own-knowledge-base).
 - **Editable system prompt.** Change how headlines are written from the panel. Edits apply to the
   next echo.
+- **A ping when background work finishes.** When a session's background command or agent finishes and
+  Claude reports back, a small silent card shows the task (✓ or ✗) and the start of Claude's reply,
+  however short that reply is.
+- **A quiet "done" for short turns.** A turn too short for an echo gets a one-line silent chip instead
+  (✓ Done, call sign, project, turn length), shaped and colored unlike an echo card so you can tell
+  them apart at a glance. No model call. Turn it off with `ECHO_OS_TURN_DONE_POPUP=false`.
 - **A popup you can read.** Each echo also appears as a small card in the top-right corner while it
   is spoken (and still appears when speech is muted). Each project folder has its own card color.
-  The card shows a live waveform while it's spoken, how long the turn took, how many tools it used
+  Click a card to jump to that session's tab in Terminal or iTerm2 (other terminals are brought
+  to the front). The card shows a live waveform while it's spoken, how long the turn took, how many tools it used
   and when it finished, and how the KB figured in. Drag a card to move the stack anywhere; new cards
   appear there from then on (drag it back to the top-right corner to reset).
 - **Questions and suggestions on screen.** When the agent asks you something or suggests next steps,
@@ -28,6 +37,8 @@ prefixed by the project folder and the session's call sign:
   so voices never overlap. Other tools can speak through that endpoint.
 - **A tiny menu bar app** that shows live sessions and recent echoes, with mute, replay, and a KB
   light that shows whether your knowledge base is reachable (click it to re-check).
+
+<p align="center"><img src="docs/images/popups.gif" width="372" alt="Popup cards in the screen corner: an echo with questions slides in and is spoken, then a plain echo slides in while its countdown drains; the answered card closes and the plain one fades"></p>
 
 Design and decisions: [docs/spec.md](docs/spec.md). Agents:
 [headline](echo_os/agents/headline/README.md), [KB relevance](echo_os/agents/kb_relevance/README.md).
@@ -129,11 +140,13 @@ panel edits in place.
 
 ## How it works
 
+![Hooks post to a local daemon, which checks the length gate; one worker runs the KB and headline agents, then a single speech queue speaks the headline and shows a popup](docs/images/how-it-works.svg)
+
 Each hook runs [`hooks/echo-hook.sh`](hooks/echo-hook.sh), which POSTs the event to
 `127.0.0.1:8431` in the background and returns at once. On `Stop` the daemon reads the turn out of
 the session transcript and checks the length gate. Then one worker runs the KB relevance agent and
 the headline agent: each is a stripped-down `claude -p` call on Haiku. Last, it queues the speech.
-Headless sessions, including echo-OS's own calls, are ignored.
+A turn below the gate gets only a silent "done" chip. Headless sessions, including echo-OS's own calls, are ignored.
 
 Anything else that wants to talk can join the queue:
 
@@ -178,6 +191,7 @@ curl -X POST localhost:8431/api/speak -H 'Content-Type: application/json' \
 
 ```bash
 ./echoctl test                      # or: ./venv/bin/python -m pytest -q
+./venv/bin/python scripts/render_screenshots.py   # re-render the README images from demo data (the GIF needs ffmpeg)
 ```
 
 The tests need macOS (the popup tests build real AppKit views) but never call a model or speak.
