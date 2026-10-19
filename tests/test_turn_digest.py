@@ -1,6 +1,6 @@
-from conftest import T0, assistant_text, human, tool_result, tool_use, turn_end
+from conftest import T0, assistant_text, human, task_notification, tool_result, tool_use, turn_end
 
-from echo_os.transcript import read_last_turn
+from echo_os.transcript import BackgroundTask, parse_task_notification, read_last_turn
 
 
 def test_digest_covers_only_the_turn_after_the_previous_turn_end(write_transcript):
@@ -104,3 +104,55 @@ def test_messages_sent_mid_turn_are_part_of_the_ask(write_transcript):
     digest = read_last_turn(path, ended_at=T0.timestamp() + 300)
     assert digest.ask == "Measure latency\n\nAlso add a popup"
     assert digest.duration_seconds == 300
+
+
+def test_a_turn_started_by_a_finished_background_task_has_no_human_ask(write_transcript):
+    path = write_transcript([
+        human("Run the suite in the background", 0), assistant_text("Running; I'll report back.", 5), turn_end(6),
+        task_notification('Background command "Run full typecheck and test suite" completed (exit code 0)', 900),
+        assistant_text("All 249 tests pass.", 905),
+    ])
+    digest = read_last_turn(path, ended_at=T0.timestamp() + 906)
+    assert digest.ask == ""
+    assert digest.background_tasks == (BackgroundTask("Run full typecheck and test suite", "completed"),)
+    assert digest.response == "All 249 tests pass."
+    assert digest.duration_seconds == 6
+
+
+def test_turns_started_by_a_human_have_no_background_tasks(write_transcript):
+    path = write_transcript([human("go", 0), assistant_text("done", 5)])
+    assert read_last_turn(path, ended_at=T0.timestamp() + 6).background_tasks == ()
+
+
+def test_tasks_that_finish_together_are_all_listed(write_transcript):
+    path = write_transcript([
+        turn_end(0),
+        task_notification('Agent "Profile from meetings" finished', 10),
+        task_notification('Agent "Profile from docs" finished', 10),
+        assistant_text("All three helper agents have finished.", 15),
+    ])
+    digest = read_last_turn(path, ended_at=T0.timestamp() + 16)
+    assert [task.label for task in digest.background_tasks] == ["Profile from meetings", "Profile from docs"]
+
+
+def test_failed_and_nonzero_exit_tasks_are_not_ok():
+    assert parse_task_notification(
+        '<task-notification><status>completed</status><summary>Background command "npm test" completed '
+        '(exit code 1)</summary></task-notification>') == BackgroundTask("npm test", "failed")
+    failed = parse_task_notification(
+        '<task-notification><status>failed</status><summary>Agent "Deep dive" failed: API error</summary>'
+        '</task-notification>')
+    assert failed == BackgroundTask("Deep dive", "failed") and not failed.ok
+
+
+def test_task_labels_are_unescaped_and_fall_back_to_the_summary():
+    assert parse_task_notification(
+        '<task-notification><status>completed</status><summary>Background command " cd app &amp;&amp; npm run ship" '
+        'completed (exit code 0)</summary></task-notification>').label == "cd app && npm run ship"
+    assert parse_task_notification(
+        "<task-notification><status>killed</status><summary>Something else</summary></task-notification>"
+    ) == BackgroundTask("Something else", "killed")
+
+
+def test_text_that_is_not_a_task_notification_is_ignored():
+    assert parse_task_notification("hello") is None

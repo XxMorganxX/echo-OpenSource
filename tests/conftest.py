@@ -48,3 +48,11 @@ def write_transcript(tmp_path: Path):
                 handle.write((entry if isinstance(entry, str) else json.dumps(entry)) + "\n")
         return path
     return _write
+
+
+def task_notification(summary, seconds, status="completed"):
+    """The user entry Claude Code writes when a background command or agent finishes."""
+    content = (f"<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+               f"<output-file>/tmp/b1.output</output-file>\n<status>{status}</status>\n"
+               f"<summary>{summary}</summary>\n</task-notification>")
+    return human(content, seconds, origin={"kind": "task-notification"})

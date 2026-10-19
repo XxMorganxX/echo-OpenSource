@@ -1,6 +1,7 @@
 import pytest
-from conftest import T0, assistant_text, human, tool_result, tool_use
+from conftest import T0, assistant_text, human, task_notification, tool_result, tool_use, turn_end
 
+from echo_os import settings
 from echo_os.agents.headline.agent import Headline
 from echo_os.agents.kb_relevance.agent import KbContext, KbLookup
 from echo_os.agents.shared.headless_model import HeadlessModelError
@@ -63,7 +64,7 @@ def short_turn(write_transcript):
 
 @pytest.fixture
 def make_pipeline(tmp_path):
-    def _make(headline=None, kb=None, kb_enabled=True):
+    def _make(headline=None, kb=None, kb_enabled=True, turn_done_popups=True):
         parts = dict(
             registry=SessionRegistry(tmp_path / "sessions.json", call_signs=["Alpha", "Bravo"]),
             headline_agent=headline or FakeHeadline(),
@@ -74,7 +75,9 @@ def make_pipeline(tmp_path):
         )
         pipeline = EchoPipeline(**parts, kb_enabled=kb_enabled, min_turn_seconds=180, min_tool_calls=5,
                                 max_job_age_seconds=600, tracked_entrypoints={"cli"},
-                                spoken_template="{project}, {call_sign}. {headline}")
+                                spoken_template="{project}, {call_sign}. {headline}",
+                                background_detail_chars=settings.BACKGROUND_DONE_DETAIL_CHARS,
+                                turn_done_popups=turn_done_popups)
         return pipeline, parts
     return _make
 
@@ -158,12 +161,35 @@ def test_long_turn_is_summarized_spoken_and_recorded(make_pipeline, write_transc
     assert parts["registry"].get("s1").last_headline == "Billing refactor done."
 
 
-def test_short_turn_is_skipped(make_pipeline, write_transcript):
+def test_short_turn_gets_no_echo(make_pipeline, write_transcript):
     pipeline, parts = make_pipeline()
     pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=None, now=1)
     assert pipeline.process(stop_job(short_turn(write_transcript)), now=T0.timestamp() + 410) is None
-    assert parts["announcer"].said == [] and parts["headline_agent"].calls == []
-    assert parts["kb_agent"].calls == 0
+    assert parts["announcer"].said == [""] and parts["headline_agent"].calls == []
+    assert parts["kb_agent"].calls == 0 and parts["history"].recent(10) == []
+
+
+def test_short_turn_shows_a_silent_done_popup(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=4242, now=1)
+    pipeline.process(stop_job(short_turn(write_transcript)), now=T0.timestamp() + 410)
+    [announcement] = parts["announcer"].announced
+    assert announcement.turn_done and announcement.background_tasks == ()
+    assert (announcement.spoken_text, announcement.body) == ("", "")
+    assert (announcement.title, announcement.subtitle, announcement.pid) == ("Alpha", "billing-svc", 4242)
+    assert announcement.duration_seconds == 405 and announcement.tool_calls == 0
+
+
+def test_short_turn_shows_nothing_when_done_popups_are_off(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline(turn_done_popups=False)
+    pipeline.process(stop_job(short_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert parts["announcer"].announced == []
+
+
+def test_long_turn_is_not_a_done_popup(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    assert not parts["announcer"].announced[0].turn_done
 
 
 def test_kb_agent_is_skipped_when_disabled(make_pipeline, write_transcript):
@@ -360,3 +386,65 @@ def test_other_events_do_not_resolve_popups(make_pipeline):
     for event in ("SessionStart", "Stop"):
         pipeline.handle_hook(hook(event, session_id="s1", transcript_path="/t"), entrypoint="cli", pid=None, now=5)
     assert parts["announcer"].resolved == []
+
+
+def test_announcement_carries_the_session_pid_so_a_click_can_find_its_terminal(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=4242, now=1)
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    pipeline.replay(echo.id)
+    assert [a.pid for a in parts["announcer"].announced] == [4242, 4242]
+
+
+def test_replay_of_an_ended_session_has_no_pid(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=4242, now=1)
+    echo = pipeline.process(stop_job(long_turn(write_transcript)), now=T0.timestamp() + 410)
+    pipeline.handle_hook(hook("SessionEnd"), entrypoint="cli", pid=4242, now=2)
+    pipeline.replay(echo.id)
+    assert parts["announcer"].announced[-1].pid is None
+
+
+def background_done(write_transcript, *, reply="All 249 tests pass; **typecheck** clean.", long=False):
+    entries = [human("Run the suite in the background", 0), turn_end(5),
+               task_notification('Background command "Run the test suite" completed (exit code 0)', 10)]
+    if long:
+        for i in range(6):
+            entries += [tool_use("Edit", 20 + i), tool_result(21 + i)]
+    entries.append(assistant_text(reply, 400 if long else 12))
+    return write_transcript(entries, "background.jsonl")
+
+
+def background_job(path, *, ended_after):
+    return EchoJob(session_id="s1", transcript_path=str(path), ended_at=T0.timestamp() + ended_after,
+                   queued_at=T0.timestamp() + ended_after)
+
+
+def test_short_turn_after_a_background_task_shows_a_silent_minimal_popup(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.handle_hook(hook("SessionStart"), entrypoint="cli", pid=4242, now=1)
+    assert pipeline.process(background_job(background_done(write_transcript), ended_after=13),
+                            now=T0.timestamp() + 14) is None
+    [announcement] = parts["announcer"].announced
+    assert [task.label for task in announcement.background_tasks] == ["Run the test suite"]
+    assert announcement.spoken_text == "" and not announcement.turn_done
+    assert announcement.body == "All 249 tests pass; typecheck clean."
+    assert (announcement.title, announcement.subtitle, announcement.pid) == ("Alpha", "billing-svc", 4242)
+    assert parts["headline_agent"].calls == [] and parts["history"].recent(10) == []
+
+
+def test_long_reply_on_the_minimal_popup_is_shortened(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    pipeline.process(background_job(background_done(write_transcript, reply="word " * 200), ended_after=13),
+                     now=T0.timestamp() + 14)
+    body = parts["announcer"].announced[0].body
+    assert len(body) <= settings.BACKGROUND_DONE_DETAIL_CHARS and body.endswith("…")
+
+
+def test_long_turn_after_a_background_task_gets_the_full_echo(make_pipeline, write_transcript):
+    pipeline, parts = make_pipeline()
+    echo = pipeline.process(background_job(background_done(write_transcript, long=True), ended_after=405),
+                            now=T0.timestamp() + 410)
+    assert echo is not None and echo.ask == "Background task finished: Run the test suite"
+    assert parts["announcer"].said == ["Alpha. Billing refactor done."]
+    assert parts["announcer"].announced[0].background_tasks == ()

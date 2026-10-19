@@ -126,7 +126,7 @@ def build_app(popup: Popup | None = None, preferences=None) -> EchoApp:
         headline_agent=HeadlineAgent(model),
         kb_agent=KbRelevanceAgent(model, kb_connection) if kb_connection else None,
         announcer=announcer,
-        history=EchoHistory(settings.ECHOES_PATH),
+        history=EchoHistory(settings.ECHOES_PATH, max_age_seconds=settings.NOTIFICATION_MAX_AGE_SECONDS),
         preferences=preferences,
         kb_enabled=kb_connection is not None,
         min_turn_seconds=settings.MIN_TURN_SECONDS,
@@ -134,6 +134,8 @@ def build_app(popup: Popup | None = None, preferences=None) -> EchoApp:
         max_job_age_seconds=settings.MAX_JOB_AGE_SECONDS,
         tracked_entrypoints=settings.TRACKED_ENTRYPOINTS,
         spoken_template=settings.SPOKEN_TEMPLATE,
+        background_detail_chars=settings.BACKGROUND_DONE_DETAIL_CHARS,
+        turn_done_popups=settings.TURN_DONE_POPUP,
     )
     worker = EchoWorker(pipeline.process, settle_seconds=settings.TRANSCRIPT_SETTLE_SECONDS)
     background = [announcer, worker]

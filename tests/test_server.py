@@ -32,7 +32,7 @@ def running(tmp_path):
         headline_agent=FakeHeadline(), kb_agent=FakeKb(), announcer=speaker,
         history=EchoHistory(tmp_path / "e.jsonl"), preferences=Preferences(tmp_path / "p.json"),
         kb_enabled=True, min_turn_seconds=180, min_tool_calls=5, max_job_age_seconds=600,
-        tracked_entrypoints={"cli"}, spoken_template="{call_sign}. {headline}",
+        tracked_entrypoints={"cli"}, spoken_template="{call_sign}. {headline}", background_detail_chars=160, turn_done_popups=True,
     )
     worker = FakeWorker()
     app = EchoApp(pipeline=pipeline, worker=worker, announcer=speaker, prompt_path=prompt, recent_limit=10,

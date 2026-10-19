@@ -3,7 +3,11 @@ from AppKit import NSApplication
 from echo_os import settings
 from echo_os.echo.kb_usage import KbUsage
 from echo_os.echo.announcer import Announcement
-from echo_os.menubar.popup import NEUTRAL, build_card, card_color, display_seconds, is_sticky, meta_text
+from echo_os.menubar.popup import (
+    NEUTRAL, build_background_card, build_card, build_turn_done_card, card_color, display_seconds, is_sticky, meta_text,
+    on_screen_seconds, sticky_seconds_left,
+)
+from echo_os.transcript import BackgroundTask
 
 # Controls only dispatch their actions once an NSApplication exists, as it always does in the app.
 NSApplication.sharedApplication()
@@ -241,3 +245,66 @@ def test_section_headings_have_icons():
     card = build_card(title="A", subtitle="p", body="Done.", on_click=None, questions=("Push?",), suggestions=("Tests",))
     tips = [view.toolTip() for view in icons(card)]
     assert "Questions for you" in tips and "Suggestions" in tips
+
+
+def _texts(view):
+    from AppKit import NSTextField
+    found = [v.stringValue() for v in view.subviews() if isinstance(v, NSTextField)]
+    for child in view.subviews():
+        if not isinstance(child, NSTextField):
+            found += _texts(child)
+    return found
+
+
+def test_background_card_lists_each_task_and_claudes_reply():
+    card = build_background_card(title="Alpha", subtitle="echo-OS", tasks=(BackgroundTask("Run the suite", "completed"),),
+                                 detail="All 249 tests pass.", on_click=None)
+    texts = _texts(card)
+    assert {"Alpha", "echo-OS", "Run the suite", "All 249 tests pass."} <= set(texts)
+    assert card.frame().size.width == settings.POPUP_WIDTH
+
+
+def test_background_card_marks_tasks_that_did_not_complete():
+    card = build_background_card(title="A", subtitle="p", tasks=(BackgroundTask("npm test", "failed"),), detail="",
+                                 on_click=None)
+    assert "failed" in _texts(card)
+
+
+def test_background_card_is_smaller_than_an_echo_card():
+    background = build_background_card(title="A", subtitle="p", tasks=(BackgroundTask("x", "completed"),),
+                                       detail="Done.", on_click=None)
+    echo = build_card(title="A", subtitle="p", body="Done.", on_click=None, kb_usage=KbUsage("off"), meta="1 min")
+    assert background.frame().size.height <= echo.frame().size.height
+
+
+def test_done_chip_says_done_with_the_session_and_turn_length():
+    chip = build_turn_done_card(title="Alpha", subtitle="echo-OS", duration_seconds=42.4, on_click=None, color=2)
+    assert _texts(chip) == ["Done", "Alpha", "echo-OS", "42 s"]
+    assert chip.frame().size.width == settings.POPUP_WIDTH
+
+
+def test_done_chip_leaves_out_an_unknown_turn_length():
+    chip = build_turn_done_card(title="Alpha", subtitle="echo-OS", duration_seconds=None, on_click=None)
+    assert _texts(chip) == ["Done", "Alpha", "echo-OS"]
+
+
+def test_done_chip_is_a_single_line_capsule_unlike_the_other_cards():
+    chip = build_turn_done_card(title="A", subtitle="p", duration_seconds=5, on_click=None)
+    background = build_background_card(title="A", subtitle="p", tasks=(BackgroundTask("x", "completed"),),
+                                       detail="", on_click=None)
+    assert chip.capsule and not background.capsule
+    assert chip.frame().size.height < background.frame().size.height
+
+
+def test_done_chip_stays_up_briefly_whatever_it_says():
+    chip = Announcement(spoken_text="", title="A", subtitle="p", body="word " * 100, turn_done=True)
+    assert on_screen_seconds(chip) == settings.TURN_DONE_POPUP_SECONDS
+    plain = Announcement(spoken_text="", title="A", subtitle="p", body="word " * 30)
+    assert on_screen_seconds(plain) == display_seconds("word " * 30)
+
+
+def test_sticky_cards_close_once_their_echo_is_older_than_the_max_age():
+    day = 24 * 3600
+    assert sticky_seconds_left(finished_at=0, now=day, max_age_seconds=3 * day) == 2 * day
+    assert sticky_seconds_left(finished_at=0, now=4 * day, max_age_seconds=3 * day) == 0
+    assert sticky_seconds_left(finished_at=None, now=day, max_age_seconds=3 * day) == 3 * day

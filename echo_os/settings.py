@@ -76,6 +76,8 @@ KB_STATUS_CHECK_SECONDS = 5 * 60
 # model's headline. The first two are filled in by code, never by a model.
 SPOKEN_TEMPLATE = "{project}, {call_sign}. {headline}"
 RECENT_ECHOES_LIMIT = 30
+# Echoes older than this leave the panel (and echoes.jsonl), and sticky popups close.
+NOTIFICATION_MAX_AGE_SECONDS = 3 * 24 * 60 * 60
 
 # One color per working directory (see sessions.py), used by the popup cards and the panel.
 # Live directories get distinct colors up to this many.
@@ -92,6 +94,14 @@ POPUP_READING_WORDS_PER_SECOND = 2.5
 POPUP_MIN_SECONDS = 6
 POPUP_MAX_SECONDS = 20
 # Cards with questions or suggestions have no timer: they stay until closed, answered or the session ends.
+# A turn that a finished background task started, but too short for an echo, gets a minimal silent card:
+# the task, plus the start of Claude's reply cut to this many characters.
+BACKGROUND_DONE_DETAIL_CHARS = 160
+# Any other turn too short for an echo gets a one-line "done" chip (✓ Done, call sign, project, turn length),
+# shaped and colored unlike the echo cards, for this long. False shows nothing for those turns.
+TURN_DONE_POPUP = os.environ.get("ECHO_OS_TURN_DONE_POPUP", "true").lower() == "true"
+TURN_DONE_POPUP_SECONDS = 4
+TURN_DONE_TEXT = "Done"
 
 # -- Voice -----------------------------------------------------------------------------
 VOICE_PROVIDER = os.environ.get("ECHO_OS_VOICE", "macos-say")  # macos-say | openai

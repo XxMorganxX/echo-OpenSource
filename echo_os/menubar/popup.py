@@ -3,10 +3,16 @@
 The announcer calls `show`/`resolve` from other threads; everything AppKit happens on the main
 thread via `AppHelper.callAfter`. Cards stack downward.
 
-Two kinds of card:
-- Plain: fades after reading time; clicking it dismisses it and opens the panel.
+Three kinds of card:
+- Plain: fades after reading time; clicking it dismisses it.
 - Sticky (has questions or suggestions): stays until you close it with its ✕, reply to that Claude
-  session, or the session ends. Clicking it opens the panel and leaves it up.
+  session, the session ends, or its echo is older than NOTIFICATION_MAX_AGE_SECONDS. Clicking it leaves it up.
+- Background done: a smaller, silent plain card for a short turn that a finished background task
+  started. One ✓/✗ row per task and the start of Claude's reply; no voice indicator or footer.
+- Done chip: any other turn too short for an echo. One line in a neutral capsule (✓ Done, call sign,
+  project, turn length), so it never reads as an echo; up for TURN_DONE_POPUP_SECONDS, no countdown.
+
+A click hands the card's announcement to `on_click`; the app takes you to that session's terminal tab.
 
 Dragging any card moves the whole stack; where you drop it is saved in preferences and used for
 every card after (see popup_position.py). Dropping it back near the top-right corner restores the default.
@@ -88,6 +94,8 @@ MUTED = NSColor.colorWithSRGBRed_green_blue_alpha_(139 / 255, 148 / 255, 158 / 2
 ACCENT = NSColor.colorWithSRGBRed_green_blue_alpha_(88 / 255, 166 / 255, 255 / 255, 1.0)
 
 WARNING = NSColor.colorWithSRGBRed_green_blue_alpha_(210 / 255, 153 / 255, 34 / 255, 1.0)
+SUCCESS = NSColor.colorWithSRGBRed_green_blue_alpha_(63 / 255, 185 / 255, 80 / 255, 1.0)
+DANGER = NSColor.colorWithSRGBRed_green_blue_alpha_(248 / 255, 81 / 255, 73 / 255, 1.0)
 
 
 def _srgb(hex_color: str):
@@ -120,6 +128,13 @@ VOICE_INDICATOR = {
     "muted": ("speaker.slash.fill", "Muted"),
 }
 
+# Background-done rows: (SF Symbol, color) for a task that completed, and for one that didn't.
+TASK_DONE = ("checkmark.circle.fill", SUCCESS)
+TASK_NOT_DONE = ("xmark.circle.fill", DANGER)
+TASK_ICON_SIZE = 13
+TASK_ICON_GAP = 6
+DONE_CHIP_PADDING_Y = 7
+
 # Section heading icon and bullet color: (heading, SF Symbol, icon color, bullet color).
 SECTIONS = (
     (QUESTIONS_HEADING, "questionmark.bubble.fill", WARNING, WARNING),
@@ -137,22 +152,40 @@ def display_seconds(body: str) -> float:
     return min(settings.POPUP_MAX_SECONDS, max(settings.POPUP_MIN_SECONDS, reading + 2))
 
 
+def on_screen_seconds(announcement) -> float:
+    """How long a card that fades stays up: reading time, or the done chip's short fixed time."""
+    if announcement.turn_done:
+        return settings.TURN_DONE_POPUP_SECONDS
+    return display_seconds(" ".join([announcement.body] + [task.label for task in announcement.background_tasks]))
+
+
+def sticky_seconds_left(*, finished_at: float | None, now: float, max_age_seconds: float) -> float:
+    """How much longer a sticky card stays up before it is too old to matter; aged from its echo."""
+    if finished_at is None:
+        return max_age_seconds
+    return max(0.0, max_age_seconds - (now - finished_at))
+
+
 def card_color(color: int | None):
     """The working directory's color for a palette slot; None (not from a session) is neutral."""
     return NEUTRAL if color is None else DIRECTORY_COLORS[color % len(DIRECTORY_COLORS)]
+
+
+def duration_text(duration_seconds: float) -> str:
+    """"45 s", "12 min", "1 h 5 min"."""
+    seconds = round(duration_seconds)
+    if seconds >= 3600:
+        return f"{seconds // 3600} h {round(seconds % 3600 / 60)} min"
+    if seconds >= 60:
+        return f"{round(seconds / 60)} min"
+    return f"{seconds} s"
 
 
 def meta_text(*, duration_seconds: float | None, tool_calls: int | None, finished_at: float | None) -> str:
     """Footer details for an echo: "12 min · 34 tools · 2:41 PM". Missing parts are left out."""
     parts = []
     if duration_seconds is not None:
-        seconds = round(duration_seconds)
-        if seconds >= 3600:
-            parts.append(f"{seconds // 3600} h {round(seconds % 3600 / 60)} min")
-        elif seconds >= 60:
-            parts.append(f"{round(seconds / 60)} min")
-        else:
-            parts.append(f"{seconds} s")
+        parts.append(duration_text(duration_seconds))
     if tool_calls is not None:
         parts.append(f"{tool_calls} tool" + ("" if tool_calls == 1 else "s"))
     if finished_at is not None:
@@ -197,6 +230,7 @@ class CardView(NSView):
             return None
         self.on_click = on_click
         self.color = color
+        self.capsule = False  # the done chip: fully rounded, neutral, no stripe
         self.voice_indicator = None
         self.on_drag = None  # (dx, dy) while dragging; set by the presenter
         self.on_drop = None
@@ -213,6 +247,15 @@ class CardView(NSView):
     def drawRect_(self, rect):  # noqa: N802
         bounds = self.bounds()
         inset = NSMakeRect(0.5, 0.5, bounds.size.width - 1, bounds.size.height - 1)
+        if self.capsule:
+            path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(inset, inset.size.height / 2,
+                                                                           inset.size.height / 2)
+            BACKGROUND.setFill()
+            path.fill()
+            BORDER.setStroke()
+            path.setLineWidth_(1.0)
+            path.stroke()
+            return
         path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(inset, CORNER_RADIUS, CORNER_RADIUS)
         tinted = self.color is not NEUTRAL
         (BACKGROUND.blendedColorWithFraction_ofColor_(CARD_TINT, self.color) if tinted else BACKGROUND).setFill()
@@ -451,6 +494,91 @@ def build_card(*, title: str, subtitle: str, body: str, on_click: Callable | Non
     return card
 
 
+def _task_row(task, width: float):
+    """✓ or ✗, the task's label on one line, and its status on the right when it didn't complete."""
+    symbol, color = TASK_DONE if task.ok else TASK_NOT_DONE
+    status = None if task.ok else _one_line(task.status, NSFont.systemFontOfSize_weight_(10.5, 0.3), DANGER)
+    status_width = status.frame().size.width + CLOSE_GAP if status else 0
+    label = _one_line(task.label, NSFont.systemFontOfSize_weight_(12.5, 0.3), TEXT,
+                      width - TASK_ICON_SIZE - TASK_ICON_GAP - status_width)
+    height = max(label.frame().size.height, TASK_ICON_SIZE)
+    row = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
+    icon = _icon(symbol, task.status, color, TASK_ICON_SIZE)
+    icon.setFrameOrigin_((0, round((height - TASK_ICON_SIZE) / 2)))
+    label.setFrameOrigin_((TASK_ICON_SIZE + TASK_ICON_GAP, round((height - label.frame().size.height) / 2)))
+    row.addSubview_(icon)
+    row.addSubview_(label)
+    if status is not None:
+        _place_right(status, width, height / 2)
+        row.addSubview_(status)
+    return row
+
+
+def build_background_card(*, title: str, subtitle: str, tasks: tuple, detail: str, on_click: Callable | None,
+                          color: int | None = None):
+    """The minimal card for finished background tasks: header (call-sign pill, project), one row per
+    task, then `detail` (the start of Claude's reply) in muted text."""
+    width = settings.POPUP_WIDTH
+    text_width = width - 2 * PADDING_X
+    color = card_color(color)
+    pill = _pill(title, color)
+    project = _one_line(subtitle, NSFont.systemFontOfSize_(12), MUTED, text_width - pill.frame().size.width - PILL_GAP)
+    header_height = max(pill.frame().size.height, project.frame().size.height)
+    rows = [_task_row(task, text_width) for task in tasks]
+    if detail:
+        rows.append(_label(detail, NSFont.systemFontOfSize_(12), MUTED, text_width))
+    gaps = [LINE_GAP] + [ITEM_GAP] * (len(rows) - 1)
+    height = PADDING_Y * 2 + header_height + sum(view.frame().size.height for view in rows) + sum(gaps)
+    card = CardView.alloc().initWithFrame_onClick_color_(NSMakeRect(0, 0, width, height), on_click, color)
+
+    top = height - PADDING_Y
+    header_middle = top - header_height / 2
+    pill.setFrameOrigin_((PADDING_X, round(header_middle - pill.frame().size.height / 2)))
+    project.setFrameOrigin_((PADDING_X + pill.frame().size.width + PILL_GAP,
+                             round(header_middle - project.frame().size.height / 2)))
+    card.addSubview_(pill)
+    card.addSubview_(project)
+    y = top - header_height
+    for view, gap in zip(rows, gaps):
+        y -= gap + view.frame().size.height
+        view.setFrameOrigin_((PADDING_X, y))
+        card.addSubview_(view)
+    return card
+
+
+def build_turn_done_card(*, title: str, subtitle: str, duration_seconds: float | None, on_click: Callable | None,
+                         color: int | None = None):
+    """The done chip: one line in a neutral capsule, ✓ Done, the call sign in its directory color,
+    the project, and the turn's length on the right."""
+    width = settings.POPUP_WIDTH
+    color = card_color(color)
+    done = _one_line(settings.TURN_DONE_TEXT, NSFont.systemFontOfSize_weight_(12.5, 0.4), TEXT)
+    call_sign = _one_line(title, NSFont.systemFontOfSize_weight_(12, 0.4), color)
+    length = (_one_line(duration_text(duration_seconds), NSFont.systemFontOfSize_(11.5), MUTED)
+              if duration_seconds is not None else None)
+    right = width - PADDING_X - (length.frame().size.width + CLOSE_GAP if length else 0)
+    icon_left = PADDING_X + 2
+    done_left = icon_left + TASK_ICON_SIZE + TASK_ICON_GAP
+    call_sign_left = done_left + done.frame().size.width + PILL_GAP
+    project_left = call_sign_left + call_sign.frame().size.width + PILL_GAP
+    project = _one_line(subtitle, NSFont.systemFontOfSize_(12), MUTED, right - project_left)
+    height = 2 * DONE_CHIP_PADDING_Y + max(done.frame().size.height, TASK_ICON_SIZE)
+    middle = height / 2
+    card = CardView.alloc().initWithFrame_onClick_color_(NSMakeRect(0, 0, width, height), on_click, color)
+    card.capsule = True
+    symbol, icon_color = TASK_DONE
+    icon = _icon(symbol, settings.TURN_DONE_TEXT, icon_color, TASK_ICON_SIZE)
+    icon.setFrameOrigin_((icon_left, round(middle - TASK_ICON_SIZE / 2)))
+    card.addSubview_(icon)
+    for view, left in ((done, done_left), (call_sign, call_sign_left), (project, project_left)):
+        view.setFrameOrigin_((left, round(middle - view.frame().size.height / 2)))
+        card.addSubview_(view)
+    if length is not None:
+        _place_right(length, width - PADDING_X, middle)
+        card.addSubview_(length)
+    return card
+
+
 def start_speaking_animation(indicator) -> None:
     indicator.addSymbolEffect_(NSSymbolVariableColorEffect.effect().effectWithIterative())
 
@@ -474,7 +602,7 @@ def add_countdown(card, seconds: float) -> None:
 class PopupPresenter:
     """Implements the announcer's Popup contract with stacked top-right cards."""
 
-    def __init__(self, *, on_click: Callable[[], None] | None = None, preferences=None):
+    def __init__(self, *, on_click: Callable[[object], None] | None = None, preferences=None):
         """`preferences` (echo_os.echo.preferences.Preferences) keeps the dragged-to position; without
         it the stack always sits in the default corner and drags last until the cards close."""
         self._on_click = on_click
@@ -501,16 +629,27 @@ class PopupPresenter:
             if not sticky:
                 self._dismiss(holder.get("window"))
             if self._on_click is not None:
-                self._on_click()
+                self._on_click(announcement)
 
-        card = build_card(
-            title=announcement.title, subtitle=announcement.subtitle, body=announcement.body, on_click=clicked,
-            kb_usage=announcement.kb_usage, questions=announcement.questions, suggestions=announcement.suggestions,
-            on_close=(lambda: self._dismiss(holder.get("window"))) if sticky else None,
-            meta=meta_text(duration_seconds=announcement.duration_seconds, tool_calls=announcement.tool_calls,
-                           finished_at=announcement.finished_at),
-            voice_state="speaking" if speaking else "muted", color=announcement.color,
-        )
+        if announcement.turn_done:
+            card = build_turn_done_card(
+                title=announcement.title, subtitle=announcement.subtitle,
+                duration_seconds=announcement.duration_seconds, on_click=clicked, color=announcement.color,
+            )
+        elif announcement.background_tasks:
+            card = build_background_card(
+                title=announcement.title, subtitle=announcement.subtitle, tasks=announcement.background_tasks,
+                detail=announcement.body, on_click=clicked, color=announcement.color,
+            )
+        else:
+            card = build_card(
+                title=announcement.title, subtitle=announcement.subtitle, body=announcement.body, on_click=clicked,
+                kb_usage=announcement.kb_usage, questions=announcement.questions, suggestions=announcement.suggestions,
+                on_close=(lambda: self._dismiss(holder.get("window"))) if sticky else None,
+                meta=meta_text(duration_seconds=announcement.duration_seconds, tool_calls=announcement.tool_calls,
+                               finished_at=announcement.finished_at),
+                voice_state="speaking" if speaking else "muted", color=announcement.color,
+            )
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             card.frame(), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False
         )
@@ -530,11 +669,16 @@ class PopupPresenter:
         self._cards.append(_Card(window, announcement, sticky, card.voice_indicator))
         self._layout(entering=window)
         window.orderFrontRegardless()
-        if speaking:
+        if speaking and card.voice_indicator is not None:
             start_speaking_animation(card.voice_indicator)
-        if not sticky:
-            seconds = display_seconds(announcement.body)
-            add_countdown(card, seconds)
+        if sticky:
+            AppHelper.callLater(sticky_seconds_left(finished_at=announcement.finished_at, now=time.time(),
+                                                    max_age_seconds=settings.NOTIFICATION_MAX_AGE_SECONDS),
+                                self._dismiss, window)
+        else:
+            seconds = on_screen_seconds(announcement)
+            if not announcement.turn_done:
+                add_countdown(card, seconds)
             AppHelper.callLater(seconds, self._dismiss, window)
 
     def _finished_speaking_on_main(self, announcement) -> None:

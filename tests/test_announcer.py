@@ -125,3 +125,9 @@ def test_resolve_reaches_the_popup_immediately_not_behind_the_queue(tmp_path):
 
 def test_resolve_without_a_popup_is_harmless(tmp_path):
     Announcer(voice=RecordingVoice(), preferences=Preferences(tmp_path / "p.json"), popup=None).resolve("s1")
+
+
+def test_announcements_without_spoken_text_only_pop_up(tmp_path):
+    announcer, voice, _ = make(tmp_path)
+    announcer._handle(Announcement(spoken_text="", title="Alpha", subtitle="p", body="Done."))
+    assert voice.events == [("popup muted", "Alpha")]

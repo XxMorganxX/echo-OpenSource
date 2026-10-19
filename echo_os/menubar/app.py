@@ -35,11 +35,13 @@ from AppKit import (
     NSWindowStyleMaskBorderless,
 )
 from Foundation import NSDistributedNotificationCenter, NSObject, NSURL, NSURLRequest
+from PyObjCTools import AppHelper
 from WebKit import WKWebView, WKWebViewConfiguration
 
 from echo_os import settings
 from echo_os.echo.preferences import Preferences
 from echo_os.menubar.popup import PopupPresenter
+from echo_os.terminal_focus import focus_session
 
 APP_NAME = "Echo"
 STATUS_TITLE = "Echo"
@@ -129,7 +131,7 @@ class EchoMenubarApp(NSObject):
             return None
         self.show_on_launch = show_on_launch
         preferences = Preferences(settings.PREFERENCES_PATH)
-        popup = (PopupPresenter(on_click=lambda: self.showWindow_(None), preferences=preferences)
+        popup = (PopupPresenter(on_click=self._go_to_session, preferences=preferences)
                  if settings.POPUP_ENABLED else None)
         self.runtime = DaemonRuntime(settings.SERVER_HOST, settings.SERVER_PORT, popup=popup, preferences=preferences)
         self.status_item = None
@@ -173,6 +175,16 @@ class EchoMenubarApp(NSObject):
         center = NSDistributedNotificationCenter.defaultCenter()
         center.addObserver_selector_name_object_(self, "remoteToggle:", settings.MENUBAR_TOGGLE_NOTIFICATION, None)
         center.addObserver_selector_name_object_(self, "remoteShow:", settings.MENUBAR_SHOW_NOTIFICATION, None)
+
+    @objc.python_method
+    def _go_to_session(self, announcement) -> None:
+        """Popup click: the session's terminal tab, or the panel when there is none to go to.
+        Off the main thread because osascript can take a moment (longer on the first Automation prompt)."""
+        def focus():
+            if not focus_session(announcement.pid):
+                AppHelper.callAfter(self.showWindow_, None)
+
+        threading.Thread(target=focus, name="echo-focus", daemon=True).start()
 
     # -- Window ------------------------------------------------------------------------------------
     def windowShouldClose_(self, sender):  # noqa: N802
